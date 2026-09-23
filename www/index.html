@@ -1005,6 +1005,48 @@
     if(groups && groups.length) return parseInt(groups[groups.length-1],10);
     return wordsToNumber(text);
   }
+  /* Separa TODOS os números de um texto falado, na ordem: "doze trinta e cinco 7" → [12, 35, 7].
+     Junta dezena + unidade ("vinte e cinco", "vinte cinco" → 25) e centena ("cento e dez" → 110).
+     Números colados a uma operação ("seis vezes sete", "6 x 7") são descartados — é a pessoa lendo
+     a conta em voz alta, não a resposta. Inclui palavras que o reconhecedor costuma confundir
+     ("Deus" → 10, "novo" → 9, "sem" → 100, "dose" → 12, "treis" → 3...). */
+  var NUM_ALIASES = {"deus":10,"des":10,"dés":10,"novo":9,"sem":100,"dose":12,"doses":12,"treis":3,"trez":3,"tress":3,
+    "sais":6,"seiz":6,"set":7,"seti":7,"oitu":8,"quatru":4,"sinco":5,"dezeseis":16,"dezesete":17,"dezasseis":16,"dezassete":17,
+    "dezanove":19,"catorse":14,"quatorse":14,"cincoenta":50,"sesenta":60,"doiz":2,"dous":2};
+  var NUM_OPS = {"mais":1,"menos":1,"vezes":1,"x":1,"por":1,"dividido":1,"op":1};
+  function numWordValue(tok){
+    if(PT_NUM_WORDS.hasOwnProperty(tok)) return PT_NUM_WORDS[tok];
+    if(NUM_ALIASES.hasOwnProperty(tok)) return NUM_ALIASES[tok];
+    return null;
+  }
+  function extractSpokenNumbers(text){
+    var raw = normWord(text).replace(/[×*+÷\/]|(^|\s)-(\s|$)/g, " op ").replace(/=/g, " ");
+    var toks = raw.split(/[^a-z0-9]+/).filter(Boolean);
+    var items = [], cur = null;
+    function flush(){ if(cur){ items.push({v:cur.v}); cur = null; } }
+    for(var i=0;i<toks.length;i++){
+      var t = toks[i];
+      if(/^\d+$/.test(t)){ flush(); items.push({v:parseInt(t,10)}); continue; }
+      if(NUM_OPS[t]){ flush(); items.push({op:true}); continue; }
+      if(t === "e") continue;
+      var v = numWordValue(t);
+      if(v === null){ flush(); continue; }
+      if(cur){
+        if(cur.v >= 100 && cur.v % 100 === 0 && v < 100){ cur.v += v; cur.tens = (v >= 20 && v % 10 === 0); continue; }
+        if(cur.tens && v >= 1 && v <= 9){ cur.v += v; cur.tens = false; continue; }
+        flush();
+      }
+      cur = {v:v, tens:(v >= 20 && v < 100 && v % 10 === 0)};
+    }
+    flush();
+    var out = [];
+    for(var k=0;k<items.length;k++){
+      if(items[k].op) continue;
+      var prevOp = k > 0 && items[k-1].op, nextOp = k < items.length-1 && items[k+1].op;
+      if(!prevOp && !nextOp) out.push(items[k].v);
+    }
+    return out;
+  }
   function firstSpokenNumber(texts){
     for(var i=0;i<texts.length;i++){
       var v = parseSpokenNumber(texts[i]);
@@ -1018,7 +1060,7 @@
     2:["vermelho","vermelha","vermelhos","vermelhas","vermelio"],
     3:["amarelo","amarela","amarelos","amarelas"],
     4:["verde","verdes","verdi"],
-    5:["roxo","roxa","roxos","roxas","rocho","rouxo","ruxo","rocha","rosso"],
+    5:["roxo","roxa","roxos","roxas","rocho","rouxo","ruxo","rocha","rosso","rosto","roche","rox","rock","roxy","hoxo","roco","rochos"],
     6:["laranja","laranjas"]
   };
   var COLOR_LOOKUP = (function(){
@@ -1026,6 +1068,37 @@
     Object.keys(COLOR_ALIASES).forEach(function(id){ COLOR_ALIASES[id].forEach(function(w){ m[w] = +id; }); });
     return m;
   })();
+  // Aproximação por "som": para palavras que não bateram exatamente, compara uma forma fonética
+  // simplificada (x → ch, h inicial → r, final a/e/u → o...) com as cores, aceitando 1 letra de
+  // diferença (2 nas palavras longas). Pega transcrições tortas como "Rochu" ou "vermeio".
+  function colorPhon(w){
+    return w.replace(/^h/,"r").replace(/x/g,"ch").replace(/ss/g,"s").replace(/rr/g,"r").replace(/lh/g,"li").replace(/[aeiu]$/,"o");
+  }
+  function editDist(a, b){
+    var m = a.length, n = b.length, prev = [], cur2 = [];
+    for(var j=0;j<=n;j++) prev[j] = j;
+    for(var i=1;i<=m;i++){
+      cur2 = [i];
+      for(var j2=1;j2<=n;j2++) cur2[j2] = Math.min(prev[j2]+1, cur2[j2-1]+1, prev[j2-1] + (a[i-1] === b[j2-1] ? 0 : 1));
+      prev = cur2;
+    }
+    return prev[n];
+  }
+  var COLOR_PHON = (function(){
+    var list = [];
+    COLORS.forEach(function(c){ list.push({id:c.id, p:colorPhon(normWord(c.name))}); });
+    return list;
+  })();
+  function fuzzyColor(tok){
+    if(tok.length < 4) return null;
+    var p = colorPhon(tok), best = null, bestD = 99;
+    COLOR_PHON.forEach(function(c){
+      var d = editDist(p, c.p);
+      var limit = c.p.length >= 7 ? 2 : 1;
+      if(d <= limit && d < bestD){ bestD = d; best = c.id; }
+    });
+    return best;
+  }
   function extractColorTokens(text){
     var norm = normWord(text);
     // O reconhecedor do Android costuma devolver pontuação ("Azul, vermelho.") — separa por
@@ -1037,7 +1110,9 @@
       // palavra cortada em duas: "a sul" → azul, "ver de" → verde
       if((tok === "a" || tok === "as" || tok === "ah") && next === "sul"){ out.push(1); i++; continue; }
       if(tok === "ver" && next === "de"){ out.push(4); i++; continue; }
-      if(COLOR_LOOKUP.hasOwnProperty(tok)) out.push(COLOR_LOOKUP[tok]);
+      if(COLOR_LOOKUP.hasOwnProperty(tok)){ out.push(COLOR_LOOKUP[tok]); continue; }
+      var fz = fuzzyColor(tok);
+      if(fz !== null) out.push(fz);
     }
     return out;
   }
@@ -1771,7 +1846,7 @@
       body.innerHTML = "";
       typeSkeletonReady = false;
       if(mode === "voice"){
-        body.appendChild(el("div",{class:"voice-banner"},["🎙 Modo voz: sua resposta falada é registrada na hora e você já passa para a próxima conta — não dá para corrigir. O histórico abaixo mostra só se acertou (✓) ou errou (✗), sem revelar o número certo."]));
+        body.appendChild(el("div",{class:"voice-banner"},["🎙 Modo voz: fale só o resultado de cada conta (ex.: \"quarenta e dois\"), sem ler a conta. A resposta é registrada na hora e você já passa para a próxima — não dá para corrigir. O histórico abaixo mostra só se acertou (✓) ou errou (✗), sem revelar o número certo."]));
       }
       var layout = el("div",{class:"calc-layout"},[
         el("div",{class:"calc-main"},[el("div",{id:"calcQuestionArea"})]),
@@ -2001,35 +2076,51 @@
       renderUpcoming();
     }
 
-    /* Um único microfone aberto durante o exercício inteiro. Cada resposta é o primeiro número que
-       aparece numa "sessão" do reconhecedor: se o texto ao vivo já tem um número e fica parado por
-       ~0,9 s (ou o reconhecedor fecha a frase), a resposta é registrada e o reconhecedor recomeça do
-       zero para a próxima conta. Fala que não tem número (tosse, "hã", "é...") é ignorada — não conta
-       como erro. */
+    /* Um único microfone aberto durante o exercício inteiro, SEM reiniciar entre uma conta e outra
+       (cada reinício leva ~0,5–1 s para o Android voltar a ouvir, e o começo da resposta seguinte se
+       perdia). O texto de cada sessão do reconhecedor vira uma lista de números na ordem falada
+       (extractSpokenNumbers); cada número novo responde a conta atual. Um número seguido de outro
+       é confirmado na hora; o último espera ~0,8 s parado (pode ser "vinte..." virando "vinte e
+       cinco") ou o fim da frase. Fala sem número ("hã", "é...") é ignorada — não conta como erro. */
     function startCalcVoice(){
       stopVoice();
       voiceStatus = makeVoiceStatus();
-      var consumedSession = null, pendingTimer = null;
-      function answer(val, session){
-        if(mode !== "voice" || idx >= TOTAL || session === consumedSession) return;
-        consumedSession = session;
+      var sessionId = null, used = 0, nums = [], pendingTimer = null;
+      function answer(val){
+        if(mode !== "voice" || idx >= TOTAL) return;
         var q = questions[idx];
         var ok = val === q.answer;
         logAnswer(ok, "(falado)", Date.now()-questionStartTs);
         renderLedger();
-        if(voiceCtl) voiceCtl.restart();
-        setTimeout(advance, 250);
+        advance();
+      }
+      function commit(n){
+        while(used < n && used < nums.length && voiceRunning && mode === "voice" && idx < TOTAL){
+          var v = nums[used]; used++; answer(v);
+        }
       }
       voiceRunning = true;
       voiceCtl = startVoiceInput({
         onText: function(text, isFinal, alts, session){
-          if(session === consumedSession) return;
+          if(!voiceRunning) return;
+          if(session !== sessionId){
+            if(pendingTimer){ clearTimeout(pendingTimer); pendingTimer = null; commit(nums.length); }
+            sessionId = session; used = 0; nums = [];
+          }
           if(pendingTimer){ clearTimeout(pendingTimer); pendingTimer = null; }
-          var val = firstSpokenNumber([text].concat(alts));
-          voiceStatus.heard(text, val === null ? "" : "ok");
-          if(val === null) return;
-          if(isFinal) answer(val, session);
-          else pendingTimer = setTimeout(function(){ pendingTimer = null; answer(val, session); }, 900);
+          var list = extractSpokenNumbers(text);
+          if(isFinal && list.length <= used && alts){
+            for(var i=0;i<alts.length;i++){ var a = extractSpokenNumbers(alts[i]); if(a.length > used){ list = a; break; } }
+          }
+          if(list.length < used) list = nums; // reconhecedor "encolheu" o texto: mantém o que já tinha
+          nums = list;
+          var tail = text.length > 40 ? "…" + text.slice(-40) : text;
+          voiceStatus.heard(tail, nums.length > used ? "ok" : "");
+          if(isFinal){ commit(nums.length); return; }
+          commit(nums.length - 1);
+          if(nums.length > used){
+            pendingTimer = setTimeout(function(){ pendingTimer = null; if(voiceRunning) commit(nums.length); }, 800);
+          }
         },
         onState: function(s){ voiceStatus.state(s); },
         onLevel: function(r){ voiceStatus.level(r); },
@@ -2262,6 +2353,10 @@
           }
           if(pendingTimer){ clearTimeout(pendingTimer); pendingTimer = null; }
           tokens = extractColorTokens(text);
+          if(isFinal && alts){
+            // O reconhecedor manda até 5 versões da frase: fica com a que tem mais cores.
+            alts.forEach(function(a){ var t2 = extractColorTokens(a); if(t2.length > tokens.length) tokens = t2; });
+          }
           if(tokens.length < tokOffset) tokOffset = tokens.length; // reconhecedor "encolheu" o texto
           status.heard(text, tokens.length ? "ok" : "");
           var st = sessionTokens();
