@@ -5,6 +5,9 @@ on:
   push:
     branches: [main]
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -43,9 +46,30 @@ jobs:
         working-directory: android
         run: ./gradlew assembleDebug --no-daemon --stacktrace
 
-      - name: Upload APK
+      - name: Upload APK as workflow artifact
         uses: actions/upload-artifact@v4
         with:
           name: cronofoco-debug-apk
           path: android/app/build/outputs/apk/debug/app-debug.apk
           retention-days: 30
+
+      # Publica num release público de tag fixa, com URL de download previsível
+      # (github.com/.../releases/download/build-latest/app-debug.apk), que dá pra
+      # baixar sem autenticação — ambientes com acesso restrito à API do GitHub
+      # (como o sandbox usado pra disparar este build) conseguem buscar o APK assim.
+      - name: Clean up previous release
+        run: |
+          gh release delete build-latest --yes --cleanup-tag || true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish release with APK
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-latest
+          name: "Cronofoco — último build"
+          body: "APK de debug gerado automaticamente a partir do commit ${{ github.sha }}."
+          make_latest: true
+          files: android/app/build/outputs/apk/debug/app-debug.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
