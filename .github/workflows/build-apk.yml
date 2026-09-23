@@ -24,11 +24,23 @@ jobs:
       # android-actions/setup-android@v3 está abandonado e quebra sob o
       # runtime Node.js 24 que o GitHub passou a forçar em runs de Actions
       # (falha em segundos, antes de qualquer step real rodar). O runner
-      # ubuntu-latest já vem com o Android SDK e o sdkmanager pré-instalados
-      # (ANDROID_HOME / ANDROID_SDK_ROOT já configurados no PATH), então só
-      # precisamos aceitar as licenças e instalar os pacotes que faltam.
+      # ubuntu-latest já vem com o Android SDK pré-instalado (ANDROID_HOME
+      # aponta pra ele), mas o binário sdkmanager NÃO está no PATH por
+      # padrão (tentativa anterior falhou com "exit code 127" = comando não
+      # encontrado) — por isso localizamos o binário dinamicamente e
+      # adicionamos o diretório dele ao PATH antes de usá-lo.
+      - name: Locate Android sdkmanager and add to PATH
+        run: |
+          set -e
+          SDKMANAGER_PATH=$(find "$ANDROID_HOME" -maxdepth 5 -name sdkmanager -type f 2>/dev/null | head -n1)
+          if [ -z "$SDKMANAGER_PATH" ]; then
+            echo "sdkmanager não encontrado sob $ANDROID_HOME" >&2
+            exit 1
+          fi
+          dirname "$SDKMANAGER_PATH" >> "$GITHUB_PATH"
+
       - name: Accept Android SDK licenses
-        run: yes | sdkmanager --licenses || true
+        run: yes | sdkmanager --licenses
 
       - name: Install Android SDK platform/build-tools
         run: |
