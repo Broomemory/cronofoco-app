@@ -707,11 +707,13 @@
   var LICENSE_KEY = "cronofoco_license_v1";
   var LICENSES = [
     // {h: "<sha256 do código, em maiúsculas>", n: "Nome de quem comprou"}
+    // n preenchido = código de uma venda: a tela mostra sempre o nome do comprador (desestimula repasse).
+    // n vazio ("") = código de teste/demonstração: a tela mostra o nome que a pessoa digitou.
     // Códigos de teste/demonstração atuais: BROOMEMORY, VASSOURA, TESTE
     // (a comparação já ignora maiúsculas/minúsculas — ver normalizeAccessCode)
-    {h:"cd4d02bd5776d2a4d3e879557fdc69771d1a2b21044d6906b34bf18b5c8fbd23", n:"Acesso de teste"},
-    {h:"8fde074ca42ca9b1e8ebc9f64057ad791d37c41b5729d5461a42c22b63293d3d", n:"Acesso de teste"},
-    {h:"9aed541153e3f39cc0b4cfd1d2b1b1d2c99f660742055147505e7e8f5ef08070", n:"Acesso de teste"}
+    {h:"cd4d02bd5776d2a4d3e879557fdc69771d1a2b21044d6906b34bf18b5c8fbd23", n:""},
+    {h:"8fde074ca42ca9b1e8ebc9f64057ad791d37c41b5729d5461a42c22b63293d3d", n:""},
+    {h:"9aed541153e3f39cc0b4cfd1d2b1b1d2c99f660742055147505e7e8f5ef08070", n:""}
   ];
 
   function normalizeAccessCode(v){ return (v||"").toString().trim().toUpperCase().replace(/\s+/g,""); }
@@ -791,6 +793,8 @@
 
   function initGate(){
     var lic = loadLicense();
+    // Versões antigas gravavam "Acesso de teste" no lugar do nome digitado — pede o nome de novo.
+    if(lic && lic.n === "Acesso de teste"){ try{ localStorage.removeItem(LICENSE_KEY); }catch(e){} lic = null; }
     if(lic && lic.h && LICENSES.some(function(l){ return l.h === lic.h; })){
       unlockApp(lic);
     } else {
@@ -1332,7 +1336,7 @@
     {key:"digitspan", title:"Sequência de Números", desc:"Memorize uma sequência de números que cresce a cada acerto — na ordem direta ou de trás pra frente.", icon:"digitspan", view:"digitspan", unlockAt:0},
     {key:"pairs", title:"Jogo da Memória", desc:"Vire duas cartas por vez e encontre todos os pares no menor tempo e com menos jogadas possível.", icon:"pairs", view:"pairs", unlockAt:0},
     {key:"flashcards", title:"Flashcards", desc:"Veja a frente do cartão, tente responder de cabeça, revele o verso e avalie o quanto você lembrou.", icon:"flashcards", view:"flashcards", unlockAt:0},
-    {key:"stroop", title:"Teste de Stroop", desc:"Fale a cor em que cada palavra está escrita — não a palavra em si. Cronômetro ou conferência por voz.", icon:"stroop", view:"stroop", unlockAt:5},
+    {key:"stroop", title:"Teste de Stroop", desc:"Fale a cor em que cada palavra está escrita — não a palavra em si. Cronômetro ou conferência por voz.", icon:"stroop", view:"stroop", unlockAt:0} /* TESTE: liberado desde o início para testar a voz no app — voltar para 5 antes do lançamento */,
     {key:"reading", title:"Leitura e Compreensão", desc:"Leia um texto curto com atenção e depois responda perguntas sobre o que leu, sem consultar o texto.", icon:"reading", view:"reading", unlockAt:5},
     {key:"sudoku", title:"Sudoku", desc:"Passatempo para descansar a mente entre uma sessão e outra de treino.", icon:"sudoku", view:"sudoku", unlockAt:5},
     {key:"fluency", title:"Fluência Verbal", desc:"Escreva o máximo de palavras de uma categoria que conseguir antes do tempo acabar.", icon:"fluency", view:"fluency", unlockAt:5},
