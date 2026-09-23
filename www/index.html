@@ -1010,7 +1010,7 @@
      Números colados a uma operação ("seis vezes sete", "6 x 7") são descartados — é a pessoa lendo
      a conta em voz alta, não a resposta. Inclui palavras que o reconhecedor costuma confundir
      ("Deus" → 10, "novo" → 9, "sem" → 100, "dose" → 12, "treis" → 3...). */
-  var NUM_ALIASES = {"deus":10,"des":10,"dés":10,"novo":9,"sem":100,"dose":12,"doses":12,"treis":3,"trez":3,"tress":3,
+  var NUM_ALIASES = {"deus":10,"des":10,"dés":10,"novo":9,"sem":100,"hum":1,"dose":12,"doses":12,"treis":3,"trez":3,"tress":3,
     "sais":6,"seiz":6,"set":7,"seti":7,"oitu":8,"quatru":4,"sinco":5,"dezeseis":16,"dezesete":17,"dezasseis":16,"dezassete":17,
     "dezanove":19,"catorse":14,"quatorse":14,"cincoenta":50,"sesenta":60,"doiz":2,"dous":2};
   var NUM_OPS = {"mais":1,"menos":1,"vezes":1,"x":1,"por":1,"dividido":1,"op":1};
@@ -1046,6 +1046,16 @@
       if(!prevOp && !nextOp) out.push(items[k].v);
     }
     return out;
+  }
+  // O reconhecedor às vezes junta duas respostas seguidas num número só. Dado o número que já tinha
+  // sido usado (prev) e como ele aparece agora (now), devolve a parte nova — ou null se não der
+  // para explicar como "prev + algo depois". Ex.: 20→21 dá 1; 10→100 dá 0; 1→12 dá 2; 7→75 dá 5.
+  function numberAddedTo(prev, now){
+    if(prev >= 20 && prev < 100 && prev % 10 === 0 && now > prev && now - prev <= 9) return now - prev;
+    if(prev >= 100 && prev % 100 === 0 && now > prev && now - prev < 100) return now - prev;
+    var a = String(prev), b = String(now);
+    if(b.length > a.length && b.indexOf(a) === 0) return parseInt(b.slice(a.length), 10);
+    return null;
   }
   function firstSpokenNumber(texts){
     for(var i=0;i<texts.length;i++){
@@ -1086,7 +1096,8 @@
   }
   var COLOR_PHON = (function(){
     var list = [];
-    COLORS.forEach(function(c){ list.push({id:c.id, p:colorPhon(normWord(c.name))}); });
+    // Verde e azul ficam de fora: há muitas palavras comuns a 1 letra delas ("vendo", "verba"...).
+    COLORS.forEach(function(c){ if(c.id !== 1 && c.id !== 4) list.push({id:c.id, p:colorPhon(normWord(c.name))}); });
     return list;
   })();
   function fuzzyColor(tok){
@@ -1194,14 +1205,21 @@
 
     var okN = states.filter(function(s){ return s === "ok"; }).length;
     var badN = states.filter(function(s){ return s === "bad"; }).length;
+    voiceReportBlock(wrap, "Stroop",
+      okN + " certas, " + badN + " erradas, " + (cells.length - okN - badN) + " não captadas, de " + cells.length,
+      "Palavra por palavra (cor da tinta esperada):", lines, log, ctl);
+    return wrap;
+  }
+  // Botão "Copiar relatório de voz" + relatório técnico (o que o reconhecedor devolveu, com tempos).
+  function voiceReportBlock(wrap, title, resultLine, linesTitle, lines, log, ctl){
     var report = [
-      "Cronofoco — relatório de voz (Stroop)",
+      "Cronofoco — relatório de voz (" + title + ")",
       "Data: " + new Date().toLocaleString("pt-BR"),
       "Motor de voz: " + ((ctl && ctl.service) || (isNativePlatform() ? "?" : "navegador")),
       "Aparelho: " + navigator.userAgent,
-      "Resultado: " + okN + " certas, " + badN + " erradas, " + (cells.length - okN - badN) + " não captadas, de " + cells.length,
+      "Resultado: " + resultLine,
       "",
-      "Palavra por palavra (cor da tinta esperada):",
+      linesTitle,
       lines.join("\n"),
       "",
       "O que o reconhecedor devolveu:"
@@ -1743,7 +1761,7 @@
   var CALC_TOTALS = [30, 50, 100, 150, 200];
   function renderCalc(root){
     var TOTAL = 100;
-    var idx, correct, startTime, timerHandle, questions, log, mode, recognizer, voiceRunning, questionStartTs, voiceCtl = null, voiceStatus = null;
+    var idx, correct, startTime, timerHandle, questions, log, mode, recognizer, voiceRunning, questionStartTs, voiceCtl = null, voiceStatus = null, voiceLogRef = null;
     var typeKeyboardMode = "app"; // "app" (teclado próprio, desenhado na tela) ou "native" (teclado do celular)
 
     var panel = el("div",{class:"panel"});
@@ -2072,6 +2090,7 @@
       var row = el("div",{class:"calc-question-row"},[hintEl, expr]);
       stage.appendChild(row); stage.appendChild(el("div",{id:"calcUpcomingArea", class:"upcoming-box"}));
       if(voiceStatus){ voiceStatus.heard(""); stage.appendChild(voiceStatus.el); }
+      stage.appendChild(el("button",{class:"btn ghost", type:"button", onclick:function(){ skipVoiceQuestion(); }},["⏭ Pular esta conta"]));
       area.appendChild(stage);
       renderUpcoming();
     }
@@ -2085,47 +2104,75 @@
     function startCalcVoice(){
       stopVoice();
       voiceStatus = makeVoiceStatus();
-      var sessionId = null, used = 0, nums = [], pendingTimer = null;
+      voiceLogRef = null;
+      // seen[k] = valor do k-ésimo número desta sessão quando ele foi usado como resposta. Se o
+      // reconhecedor depois "gruda" a resposta seguinte nele (20 + "um" → 21; 10 + "zero" → 100;
+      // 1 + "dois" → 12), a diferença é a resposta nova (numberAddedTo).
+      var sessionId = null, seen = [], pendingTimer = null, pending = [];
       function answer(val){
         if(mode !== "voice" || idx >= TOTAL) return;
         var q = questions[idx];
         var ok = val === q.answer;
         logAnswer(ok, "(falado)", Date.now()-questionStartTs);
+        log[log.length-1].heard = val;
         renderLedger();
         advance();
       }
-      function commit(n){
-        while(used < n && used < nums.length && voiceRunning && mode === "voice" && idx < TOTAL){
-          var v = nums[used]; used++; answer(v);
+      function newNumbers(list){
+        var out = [];
+        for(var k=0; k<Math.min(seen.length, list.length); k++){
+          if(list[k] !== seen[k]){
+            var d = numberAddedTo(seen[k], list[k]);
+            if(d !== null) out.push({k:k, v:d, full:list[k]});
+          }
         }
+        for(var k2=seen.length; k2<list.length; k2++) out.push({k:k2, v:list[k2], full:list[k2]});
+        return out;
+      }
+      function commit(items){
+        items.forEach(function(it){
+          if(!voiceRunning || mode !== "voice" || idx >= TOTAL) return;
+          seen[it.k] = it.full;
+          answer(it.v);
+        });
       }
       voiceRunning = true;
       voiceCtl = startVoiceInput({
         onText: function(text, isFinal, alts, session){
           if(!voiceRunning) return;
           if(session !== sessionId){
-            if(pendingTimer){ clearTimeout(pendingTimer); pendingTimer = null; commit(nums.length); }
-            sessionId = session; used = 0; nums = [];
+            if(pendingTimer){ clearTimeout(pendingTimer); pendingTimer = null; commit(pending); }
+            sessionId = session; seen = []; pending = [];
           }
           if(pendingTimer){ clearTimeout(pendingTimer); pendingTimer = null; }
           var list = extractSpokenNumbers(text);
-          if(isFinal && list.length <= used && alts){
-            for(var i=0;i<alts.length;i++){ var a = extractSpokenNumbers(alts[i]); if(a.length > used){ list = a; break; } }
+          var items = newNumbers(list);
+          if(isFinal && !items.length && alts){
+            for(var i=1;i<alts.length;i++){ var alt = newNumbers(extractSpokenNumbers(alts[i])); if(alt.length){ items = alt; break; } }
           }
-          if(list.length < used) list = nums; // reconhecedor "encolheu" o texto: mantém o que já tinha
-          nums = list;
           var tail = text.length > 40 ? "…" + text.slice(-40) : text;
-          voiceStatus.heard(tail, nums.length > used ? "ok" : "");
-          if(isFinal){ commit(nums.length); return; }
-          commit(nums.length - 1);
-          if(nums.length > used){
-            pendingTimer = setTimeout(function(){ pendingTimer = null; if(voiceRunning) commit(nums.length); }, 800);
+          voiceStatus.heard(tail, items.length ? "ok" : "");
+          if(isFinal){ pending = []; commit(items); return; }
+          // Um número seguido de outro já está completo; o último espera ~0,8 s parado.
+          commit(items.slice(0, -1));
+          pending = items.slice(-1);
+          if(pending.length){
+            pendingTimer = setTimeout(function(){ pendingTimer = null; if(voiceRunning){ var p2 = pending; pending = []; commit(p2); } }, 800);
           }
         },
         onState: function(s){ voiceStatus.state(s); },
         onLevel: function(r){ voiceStatus.level(r); },
         onError: function(code, fatal){ voiceStatus.error(code, fatal); if(fatal) voiceRunning = false; }
       });
+      voiceLogRef = voiceCtl;
+    }
+    // Pular a conta atual quando o microfone não pega (conta como não respondida certo).
+    function skipVoiceQuestion(){
+      if(mode !== "voice" || idx >= TOTAL) return;
+      logAnswer(false, "(pulada)", Date.now()-questionStartTs);
+      log[log.length-1].heard = null;
+      renderLedger();
+      advance();
     }
     function stopVoice(){
       voiceRunning = false;
@@ -2135,6 +2182,7 @@
 
     function finish(early){
       clearInterval(timerHandle);
+      var vref = voiceLogRef;
       stopVoice();
       body.innerHTML = "";
       controlsRow.style.display = "none";
@@ -2163,6 +2211,11 @@
           ["Tempo total", fmtTime(elapsedMs)],
           ["Ritmo", attempted ? (elapsedMs/attempted/1000).toFixed(1) + "s / conta" : "—"]
         ],
+        extra: (mode === "voice" && vref) ? voiceReportBlock(el("div",{class:"voice-breakdown"}), "Cálculo Mental",
+          correct + " certas, " + wrong + " erradas de " + attempted,
+          "Conta por conta:",
+          log.map(function(e){ return e.n + ". " + e.a + " " + e.op + " " + e.b + " → " + (e.heard === null || e.heard === undefined ? "pulada" : "ouviu " + e.heard + (e.ok ? " ✓" : " ✗")); }),
+          vref.log, vref) : null,
         kind:"calc", ts:rec.ts, onRepeat:restart
       });
     }
@@ -2353,9 +2406,9 @@
           }
           if(pendingTimer){ clearTimeout(pendingTimer); pendingTimer = null; }
           tokens = extractColorTokens(text);
-          if(isFinal && alts){
-            // O reconhecedor manda até 5 versões da frase: fica com a que tem mais cores.
-            alts.forEach(function(a){ var t2 = extractColorTokens(a); if(t2.length > tokens.length) tokens = t2; });
+          if(isFinal && alts && tokens.length === 0){
+            // Frase principal sem nenhuma cor: tenta as outras versões que o reconhecedor mandou.
+            for(var ai=1; ai<alts.length; ai++){ var t2 = extractColorTokens(alts[ai]); if(t2.length){ tokens = t2; break; } }
           }
           if(tokens.length < tokOffset) tokOffset = tokens.length; // reconhecedor "encolheu" o texto
           status.heard(text, tokens.length ? "ok" : "");
