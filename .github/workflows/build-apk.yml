@@ -55,14 +55,21 @@ jobs:
         run: npm ci
 
       - name: Sync Capacitor Android project
-        run: npx cap sync android
+        shell: bash
+        run: |
+          set -o pipefail
+          echo "=== commit ${{ github.sha }} ===" > build.log
+          npx cap sync android 2>&1 | tee -a build.log
 
       - name: Grant execute permission for gradlew
         run: chmod +x android/gradlew
 
       - name: Build debug APK
         working-directory: android
-        run: ./gradlew assembleDebug --no-daemon --stacktrace
+        shell: bash
+        run: |
+          set -o pipefail
+          ./gradlew assembleDebug --no-daemon --stacktrace 2>&1 | tee -a ../build.log
 
       - name: Upload APK as workflow artifact
         uses: actions/upload-artifact@v4
@@ -91,3 +98,21 @@ jobs:
           files: android/app/build/outputs/apk/debug/app-debug.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Se algo falhar, publica o log num release público "build-failed-log" — assim dá pra ler o
+      # erro sem precisar entrar na conta do GitHub (a página de logs do Actions exige login).
+      - name: Publish failure log
+        if: failure()
+        run: |
+          [ -f build.log ] || echo "sem build.log (falhou antes da sincronização) — commit ${{ github.sha }}" > build.log
+          tail -c 900000 build.log > build-failed.log
+          gh release delete build-failed-log --yes --cleanup-tag || true
+          gh release create build-failed-log build-failed.log --title "Log do último build com falha" --notes "Commit ${{ github.sha }}" --prerelease
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Remove stale failure log
+        if: success()
+        run: gh release delete build-failed-log --yes --cleanup-tag || true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
