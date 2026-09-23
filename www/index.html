@@ -800,6 +800,14 @@
     try{ return window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.SpeechRecognition; }
     catch(e){ return null; }
   }
+  /* O reconhecedor nativo do Android só ouve UMA frase por vez: ele encerra sozinho após alguns
+     segundos de silêncio (erro "No speech input"/"No match") ou ao fim de cada frase. Para imitar o
+     modo contínuo do navegador, o shim reinicia a escuta por conta própria quando continuous=true,
+     tratando silêncio/"não entendi" como algo normal (não como erro), e só dispara onend quando
+     alguém chama stop() ou acontece um erro fatal (permissão negada / sem microfone).
+     _nativeLastEnd garante um respiro mínimo entre uma sessão nativa e a próxima — reiniciar rápido
+     demais faz o Android responder "RecognitionService busy"/"Client side error". */
+  var _nativeLastEnd = 0;
   function NativeSpeechRecognitionShim(){
     this.lang = "pt-BR";
     this.continuous = false;
@@ -809,53 +817,79 @@
     this.onerror = null;
     this.onend = null;
     this._active = false;
+    this._timer = null;
+    this._retries = 0;
   }
   NativeSpeechRecognitionShim.prototype.start = function(){
     var self = this;
     var SR = nativeSpeechPlugin();
     if(!SR){ self._fireError("audio-capture"); return; }
     self._active = true;
+    self._retries = 0;
     SR.requestPermissions().then(function(perm){
+      if(!self._active) return;
       var granted = !perm || perm.speechRecognition === "granted" || perm.speechRecognition === undefined;
       if(!granted){ self._fireError("not-allowed"); return; }
-      // Uma "rodada" = uma frase reconhecida. O código que já existia (Cálculo Mental e Stroop) já
-      // reinicia sozinho a cada onend quando ainda há perguntas/palavras pendentes — então uma rodada
-      // por vez aqui reproduz o comportamento "contínuo" sem precisar mexer nessas telas.
+      self._listen();
+    }).catch(function(){
+      if(self._active) self._fireError("not-allowed");
+    });
+  };
+  NativeSpeechRecognitionShim.prototype._listen = function(){
+    var self = this;
+    var SR = nativeSpeechPlugin();
+    if(!SR){ self._fireError("audio-capture"); return; }
+    // Respiro mínimo desde a última sessão + recuo gradual se o Android estiver devolvendo erro seguido.
+    var gap = 350 + Math.min(self._retries, 10) * 150;
+    var wait = Math.max(0, gap - (Date.now() - _nativeLastEnd));
+    if(self._timer) clearTimeout(self._timer);
+    self._timer = setTimeout(function(){
+      self._timer = null;
+      if(!self._active) return;
       SR.start({
         language: self.lang || "pt-BR",
         maxResults: self.maxAlternatives || 3,
         partialResults: false,
         popup: false
       }).then(function(res){
+        _nativeLastEnd = Date.now();
         if(!self._active) return;
-        self._active = false;
+        self._retries = 0;
         var matches = (res && res.matches) || [];
         if(matches.length && self.onresult){
+          // Mesmo formato do evento do navegador: ev.resultIndex, ev.results[i].isFinal, ev.results[i][0].transcript
           var alts = matches.map(function(m){ return {transcript: m, confidence: 1}; });
-          var resultsArr = [alts];
-          resultsArr.resultIndex = 0;
-          try{ self.onresult({results: resultsArr}); }catch(e){}
+          alts.isFinal = true;
+          try{ self.onresult({resultIndex: 0, results: [alts]}); }catch(e){}
         }
-        if(self.onend){ try{ self.onend(); }catch(e){} }
+        if(!self._active) return; // onresult pode ter encerrado o exercício (stop)
+        if(self.continuous){ self._listen(); }
+        else { self._active = false; if(self.onend){ try{ self.onend(); }catch(e){} } }
       }).catch(function(err){
+        _nativeLastEnd = Date.now();
         if(!self._active) return;
-        self._active = false;
-        var msg = ((err && err.message) || "").toLowerCase();
-        var code = (msg.indexOf("permission") !== -1) ? "not-allowed" : "no-speech";
-        self._fireError(code);
+        var msg = ((err && err.message) || String(err || "")).toLowerCase();
+        if(msg.indexOf("permission") !== -1){ self._fireError("not-allowed"); return; }
+        self._retries++;
+        if(msg.indexOf("audio recording") !== -1 && self._retries > 3){ self._fireError("audio-capture"); return; }
+        // Silêncio, "não entendi", serviço ocupado, erro de rede momentâneo: no modo contínuo só
+        // volta a ouvir; no modo de uma frase só avisa "no-speech" (a tela de Cálculo reabre a escuta).
+        if(self.continuous){ self._listen(); }
+        else { self._fireError("no-speech"); }
       });
-    }).catch(function(){
-      self._fireError("not-allowed");
-    });
+    }, wait);
   };
   NativeSpeechRecognitionShim.prototype._fireError = function(code){
     var self = this;
     self._active = false;
+    if(self._timer){ clearTimeout(self._timer); self._timer = null; }
     if(self.onerror){ try{ self.onerror({error: code}); }catch(e){} }
     if(self.onend){ try{ self.onend(); }catch(e){} }
   };
   NativeSpeechRecognitionShim.prototype.stop = function(){
     this._active = false;
+    if(this._timer){ clearTimeout(this._timer); this._timer = null; }
+    _nativeLastEnd = Date.now();
     var SR = nativeSpeechPlugin();
     if(SR){ try{ SR.stop(); }catch(e){} }
   };
@@ -902,7 +936,8 @@
   };
   function wordsToNumber(text){
     var norm = normWord(text).replace(/-/g," ");
-    var tokens = norm.split(/\s+/).filter(Boolean);
+    // Idem cores: ignora pontuação que o reconhecedor do Android costuma acrescentar ("Cinco.").
+    var tokens = norm.split(/[^a-z0-9]+/).filter(Boolean);
     var total = 0, found = false;
     for(var i=0;i<tokens.length;i++){
       var tok = tokens[i];
@@ -918,7 +953,9 @@
   }
   function extractColorTokens(text){
     var norm = normWord(text);
-    var tokens = norm.split(/\s+/).filter(Boolean);
+    // O reconhecedor do Android costuma devolver pontuação ("Azul, vermelho.") — separa por
+    // qualquer coisa que não seja letra/número, não só por espaço.
+    var tokens = norm.split(/[^a-z0-9]+/).filter(Boolean);
     var out = [];
     tokens.forEach(function(tok){
       for(var i=0;i<COLORS.length;i++){
