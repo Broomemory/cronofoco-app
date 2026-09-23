@@ -364,6 +364,21 @@
   .stroop-word.pointer{outline:2px solid var(--accent); outline-offset:2px; background:var(--accent-soft);}
   .stroop-word.voice-correct{background:var(--accent-soft);}
   .stroop-word.voice-wrong{background:var(--danger-soft);}
+  .stroop-word.voice-miss{background:rgba(128,128,128,.18); outline:1px dashed rgba(128,128,128,.6); outline-offset:-1px;}
+  .voice-breakdown{margin-top:6px;}
+  .voice-breakdown .vb-legend{display:flex; gap:14px; flex-wrap:wrap; font-size:.8rem; color:var(--ink-muted); margin:8px 0 10px;}
+  .voice-breakdown .vb-legend span::before{content:""; display:inline-block; width:10px; height:10px; border-radius:3px; margin-right:5px; vertical-align:-1px;}
+  .voice-breakdown .vb-ok::before{background:var(--accent-soft); border:1px solid var(--accent);}
+  .voice-breakdown .vb-bad::before{background:var(--danger-soft); border:1px solid var(--danger);}
+  .voice-breakdown .vb-miss::before{background:rgba(128,128,128,.18); border:1px dashed rgba(128,128,128,.7);}
+  .voice-breakdown .vb-grid{display:grid; grid-template-columns:repeat(auto-fill,minmax(92px,1fr)); gap:6px;}
+  .voice-breakdown .vb-cell{border-radius:8px; padding:5px 4px; text-align:center; font-family:'IBM Plex Mono',monospace; font-size:.78rem; font-weight:600; line-height:1.25;}
+  .voice-breakdown .vb-cell small{display:block; font-weight:500; font-size:.68rem; color:var(--ink-muted);}
+  .voice-breakdown .vb-cell.ok{background:var(--accent-soft);}
+  .voice-breakdown .vb-cell.bad{background:var(--danger-soft);}
+  .voice-breakdown .vb-cell.miss{background:rgba(128,128,128,.14); outline:1px dashed rgba(128,128,128,.6); outline-offset:-1px;}
+  .voice-breakdown details{margin-top:12px; font-size:.8rem;}
+  .voice-breakdown pre{white-space:pre-wrap; word-break:break-word; max-height:220px; overflow:auto; background:var(--surface-2); padding:10px; border-radius:8px; font-size:.72rem;}
 
   /* ---------- memorization: help story + recall fields ---------- */
   .help-toggle{display:flex; align-items:center; gap:8px; font-size:.88rem; color:var(--ink-muted); margin-bottom:16px; cursor:pointer;}
@@ -984,7 +999,7 @@
     2:["vermelho","vermelha","vermelhos","vermelhas","vermelio"],
     3:["amarelo","amarela","amarelos","amarelas"],
     4:["verde","verdes","verdi"],
-    5:["roxo","roxa","roxos","roxas","rocho","rouxo","ruxo"],
+    5:["roxo","roxa","roxos","roxas","rocho","rouxo","ruxo","rocha","rosso"],
     6:["laranja","laranjas"]
   };
   var COLOR_LOOKUP = (function(){
@@ -1008,6 +1023,108 @@
     return out;
   }
 
+  /* Alinha as cores ouvidas (tokens) com as cores esperadas da grade (expected), como um "diff":
+     cada palavra da grade vira "ok" (disse a cor certa), "bad" (disse outra cor) ou "miss" (o
+     microfone não captou nenhuma palavra ali); palavras ouvidas que não se encaixam em nada são
+     descartadas. Custos: acerto 0, cor errada 1, palavra não captada 1,2, palavra sobrando 1,5 —
+     assim uma palavra perdida pelo reconhecedor vira um "miss" isolado em vez de deslocar todas
+     as seguintes. Olha no máximo 4 palavras à frente por sessão do reconhecedor.
+     Retorna {cells:[{state, heard}], consumed}. */
+  function alignColorTokens(tokens, expected){
+    var n = tokens.length, m = Math.min(expected.length, n + 4);
+    var SUB = 1, SKIP = 1.2, INS = 1.5;
+    var D = [], B = [];
+    for(var i=0;i<=n;i++){ D.push(new Array(m+1)); B.push(new Array(m+1)); }
+    D[0][0] = 0;
+    for(var j=1;j<=m;j++){ D[0][j] = j*SKIP; B[0][j] = "skip"; }
+    for(var i2=1;i2<=n;i2++){
+      D[i2][0] = i2*INS; B[i2][0] = "ins";
+      for(var j2=1;j2<=m;j2++){
+        var diag = D[i2-1][j2-1] + (tokens[i2-1] === expected[j2-1] ? 0 : SUB);
+        var ins = D[i2-1][j2] + INS;
+        var skip = D[i2][j2-1] + SKIP;
+        var best = diag, op = "diag";
+        if(skip < best){ best = skip; op = "skip"; }
+        if(ins < best){ best = ins; op = "ins"; }
+        D[i2][j2] = best; B[i2][j2] = op;
+      }
+    }
+    var end = 0;
+    for(var e=1;e<=m;e++){ if(D[n][e] < D[n][end] - 1e-9) end = e; }
+    var out = [];
+    for(var k=0;k<end;k++) out.push({state:"miss", heard:null});
+    var a = n, b = end;
+    while(a > 0 || b > 0){
+      var o = B[a][b];
+      if(o === "diag"){ out[b-1] = {state: tokens[a-1] === expected[b-1] ? "ok" : "bad", heard: tokens[a-1]}; a--; b--; }
+      else if(o === "skip"){ out[b-1] = {state:"miss", heard:null}; b--; }
+      else { a--; }
+    }
+    return {cells: out, consumed: end};
+  }
+  function colorName(id){ for(var i=0;i<COLORS.length;i++) if(COLORS[i].id === id) return COLORS[i].name; return "?"; }
+
+  function copyText(text){
+    function fallback(){
+      try{
+        var ta = document.createElement("textarea");
+        ta.value = text; ta.setAttribute("readonly",""); ta.style.position = "fixed"; ta.style.opacity = "0";
+        document.body.appendChild(ta); ta.select(); var ok = document.execCommand("copy"); ta.remove();
+        return Promise.resolve(ok);
+      }catch(e){ return Promise.resolve(false); }
+    }
+    try{
+      if(navigator.clipboard && navigator.clipboard.writeText) return navigator.clipboard.writeText(text).then(function(){ return true; }, fallback);
+    }catch(e){}
+    return fallback();
+  }
+
+  // Resultado do Stroop por voz: palavra por palavra (certa / cor errada / não captada) + relatório
+  // técnico do que o reconhecedor devolveu, que pode ser copiado e enviado para ajustar o app.
+  function stroopVoiceBreakdown(cells, states, heard, log, ctl){
+    var wrap = el("div",{class:"voice-breakdown"});
+    wrap.appendChild(el("div",{class:"calc-hint", style:"font-weight:600; color:var(--ink);"},["Conferência palavra por palavra"]));
+    wrap.appendChild(el("div",{class:"vb-legend"},[
+      el("span",{class:"vb-ok"},["cor certa"]), el("span",{class:"vb-bad"},["cor errada"]), el("span",{class:"vb-miss"},["não captada (não conta como erro)"])
+    ]));
+    var grid = el("div",{class:"vb-grid"});
+    var lines = [];
+    cells.forEach(function(c, i){
+      var st = states[i] || "miss";
+      var want = colorName(c.displayColorId);
+      var sub = st === "ok" ? "✓" : st === "bad" ? "ouvi " + colorName(heard[i]).toLowerCase() : "não captada";
+      grid.appendChild(el("div",{class:"vb-cell " + st},[(i+1) + ". " + want, el("small",{},[sub])]));
+      lines.push((i+1) + ". " + want + " → " + (st === "ok" ? "ok" : st === "bad" ? "ouviu " + colorName(heard[i]) : "não captada"));
+    });
+    wrap.appendChild(grid);
+
+    var okN = states.filter(function(s){ return s === "ok"; }).length;
+    var badN = states.filter(function(s){ return s === "bad"; }).length;
+    var report = [
+      "Cronofoco — relatório de voz (Stroop)",
+      "Data: " + new Date().toLocaleString("pt-BR"),
+      "Motor de voz: " + ((ctl && ctl.service) || (isNativePlatform() ? "?" : "navegador")),
+      "Aparelho: " + navigator.userAgent,
+      "Resultado: " + okN + " certas, " + badN + " erradas, " + (cells.length - okN - badN) + " não captadas, de " + cells.length,
+      "",
+      "Palavra por palavra (cor da tinta esperada):",
+      lines.join("\n"),
+      "",
+      "O que o reconhecedor devolveu:"
+    ].concat((log || []).map(function(e){
+      return "+" + (e.t/1000).toFixed(1) + "s " + (e.s ? "[" + e.s + "] " : "") + e.type + (e.text ? ": " + e.text : "");
+    })).join("\n");
+    var copyBtn = el("button",{class:"btn secondary", type:"button"},["📋 Copiar relatório de voz"]);
+    copyBtn.addEventListener("click", function(){
+      copyText(report).then(function(ok){
+        copyBtn.textContent = ok ? "✓ Copiado — é só colar na conversa" : "Não deu para copiar — veja o texto abaixo";
+      });
+    });
+    wrap.appendChild(el("div",{class:"actions-row", style:"margin-top:12px; justify-content:flex-start;"},[copyBtn]));
+    wrap.appendChild(el("details",{},[el("summary",{},["Ver relatório técnico"]), el("pre",{},[report])]));
+    return wrap;
+  }
+
   /* ============================= ENTRADA DE VOZ CONTÍNUA =============================
      startVoiceInput() mantém o microfone ouvindo até stop(), e entrega o texto AO VIVO:
        onText(texto, final, alternativas, sessão) — "sessão" muda sempre que o reconhecedor
@@ -1027,10 +1144,25 @@
     return _cronoVoice;
   }
   function startVoiceInput(h){
-    var ctl = {stopped:false, service:null, stop:function(){}, restart:function(){}};
-    function emitText(t, fin, alts, s){ if(!ctl.stopped && h.onText) h.onText(t||"", fin, alts||[], s); }
-    function emitState(s, info){ if(!ctl.stopped && h.onState) h.onState(s, info||{}); }
-    function emitError(code, fatal){ if(ctl.stopped) return; if(fatal) ctl.stop(); if(h.onError) h.onError(code, fatal); }
+    var ctl = {stopped:false, service:null, stop:function(){}, restart:function(){}, log:[]};
+    // Registro do que o reconhecedor devolveu (para o "Relatório de voz" no fim do exercício).
+    var t0 = Date.now(), lastLogged = {};
+    function log(type, s, text){
+      if(ctl.log.length > 600) return;
+      ctl.log.push({t: Date.now()-t0, type: type, s: s, text: text});
+    }
+    function emitText(t, fin, alts, s){
+      if(ctl.stopped) return;
+      if(fin || lastLogged[s] !== t){ lastLogged[s] = t; log(fin ? "final" : "parcial", s, (t||"") + (fin && alts && alts.length > 1 ? "  [alt: " + alts.slice(1).join(" | ") + "]" : "")); }
+      if(h.onText) h.onText(t||"", fin, alts||[], s);
+    }
+    function emitState(s, info){
+      if(ctl.stopped) return;
+      if(s === "started") log("início", "", "motor: " + ((info && info.service) || "navegador"));
+      else if(s === "ready" || s === "end") log(s === "ready" ? "ouvindo" : "pausa", "", "");
+      if(h.onState) h.onState(s, info||{});
+    }
+    function emitError(code, fatal){ if(ctl.stopped) return; log("erro", "", code + (fatal ? " (fatal)" : "")); if(fatal) ctl.stop(); if(h.onError) h.onError(code, fatal); }
 
     var P = cronoVoicePlugin();
     if(P){
@@ -2048,44 +2180,77 @@
        reconhecida é marcada na hora — menos a última da frase, que espera ~0,45 s sem mudar (o
        reconhecedor às vezes corrige a última palavra, ex. "a sul" → "azul") ou o fim da frase.
        "committed" = quantas cores desta sessão do reconhecedor já foram marcadas. */
+    /* Conferência por ALINHAMENTO (não mais "uma palavra ouvida = próxima palavra da grade"):
+       se o reconhecedor perde uma palavra, a conferência antiga deslocava todas as seguintes e
+       marcava quase tudo como erro. Agora, a cada texto recebido, as cores ouvidas NESTA sessão do
+       reconhecedor são alinhadas com a grade a partir de onde a sessão começou (alignColorTokens),
+       o que distingue "você disse a cor errada" (vermelho) de "o app não captou essa palavra"
+       (cinza, não conta como erro). Dentro da sessão as marcas podem ser corrigidas conforme chega
+       mais texto; quando a sessão fecha, ficam definitivas. A última cor ouvida espera ~0,45 s
+       parada antes de contar (o reconhecedor às vezes corrige a última palavra). */
+    var cellState = [], cellHeard = [], voiceCtlRef = null;
     function startVoiceSequence(){
       stopVoiceSeq();
+      cellState = cells.map(function(){ return null; });
+      cellHeard = cells.map(function(){ return null; });
       var status = makeVoiceStatus();
       var grid = body.querySelector(".stroop-grid");
       if(grid && grid.parentNode) grid.parentNode.insertBefore(status.el, grid);
       else body.appendChild(status.el);
-      var sessionId = null, committed = 0, tokens = [], pendingTimer = null;
-      function mark(id){
-        if(pointer >= cells.length) return;
-        var ok = id === cells[pointer].displayColorId;
-        cellEls[pointer].classList.remove("pointer");
-        cellEls[pointer].classList.add(ok ? "voice-correct" : "voice-wrong");
-        pointer++;
+      var sessionId = null, base = 0, tokOffset = 0, tokens = [], pendingTimer = null, drawnUpTo = 0;
+
+      function render(){
+        for(var i=base; i<cells.length; i++){
+          var el2 = cellEls[i];
+          el2.classList.remove("pointer","voice-correct","voice-wrong","voice-miss");
+          var st = cellState[i];
+          if(st === "ok") el2.classList.add("voice-correct");
+          else if(st === "bad") el2.classList.add("voice-wrong");
+          else if(st === "miss") el2.classList.add("voice-miss");
+        }
         if(pointer < cells.length){
           cellEls[pointer].classList.add("pointer");
-          if(cellEls[pointer].scrollIntoView && pointer % 5 === 0){ try{ cellEls[pointer].scrollIntoView({block:"nearest", behavior:"smooth"}); }catch(e){} }
-        } else finish();
+          if(pointer >= drawnUpTo + 5 && cellEls[pointer].scrollIntoView){
+            drawnUpTo = pointer;
+            try{ cellEls[pointer].scrollIntoView({block:"nearest", behavior:"smooth"}); }catch(e){}
+          }
+        }
       }
-      function commitUpTo(n){
-        while(committed < n && committed < tokens.length && pointer < cells.length){ mark(tokens[committed]); committed++; }
+      // Recalcula as marcas da sessão atual a partir de "base" usando as cores ouvidas.
+      function apply(useTokens){
+        for(var i=base; i<cells.length; i++){ cellState[i] = null; cellHeard[i] = null; }
+        var expected = cells.slice(base).map(function(c){ return c.displayColorId; });
+        var res = alignColorTokens(useTokens, expected);
+        res.cells.forEach(function(c, k){ cellState[base+k] = c.state; cellHeard[base+k] = c.heard; });
+        pointer = base + res.consumed;
+        render();
+        if(pointer >= cells.length) finish();
+      }
+      function sessionTokens(){ return tokens.slice(tokOffset); }
+      function freeze(){
+        // Fecha a sessão: tudo o que foi ouvido conta, e a próxima parte começa depois disso.
+        if(pendingTimer){ clearTimeout(pendingTimer); pendingTimer = null; }
+        apply(sessionTokens());
+        base = pointer; tokOffset = tokens.length;
       }
       voiceRunning = true;
-      recognizer = startVoiceInput({
+      recognizer = voiceCtlRef = startVoiceInput({
         onText: function(text, isFinal, alts, session){
           if(!voiceRunning) return;
           if(session !== sessionId){
-            if(pendingTimer){ clearTimeout(pendingTimer); pendingTimer = null; commitUpTo(tokens.length); }
-            sessionId = session; committed = 0; tokens = [];
+            if(sessionId !== null) freeze();
+            sessionId = session; tokens = []; tokOffset = 0;
           }
           if(pendingTimer){ clearTimeout(pendingTimer); pendingTimer = null; }
           tokens = extractColorTokens(text);
+          if(tokens.length < tokOffset) tokOffset = tokens.length; // reconhecedor "encolheu" o texto
           status.heard(text, tokens.length ? "ok" : "");
-          if(isFinal) commitUpTo(tokens.length);
-          else {
-            commitUpTo(tokens.length - 1);
-            if(tokens.length > committed){
-              pendingTimer = setTimeout(function(){ pendingTimer = null; if(voiceRunning) commitUpTo(tokens.length); }, 450);
-            }
+          var st = sessionTokens();
+          if(isFinal){ freeze(); return; }
+          apply(st.slice(0, -1));
+          if(!voiceRunning) return;
+          if(st.length){
+            pendingTimer = setTimeout(function(){ pendingTimer = null; if(voiceRunning) apply(sessionTokens()); }, 450);
           }
         },
         onState: function(s){ status.state(s); },
@@ -2099,21 +2264,33 @@
     }
 
     function finish(){
+      if(finish._done) return;
+      finish._done = true;
+      setTimeout(function(){ finish._done = false; }, 0);
       clearInterval(timerHandle);
+      var voiceLog = voiceCtlRef ? voiceCtlRef.log : null;
       stopVoiceSeq();
       var elapsedMs = Date.now()-startTime;
       var medal = medalFor(elapsedMs, {gold:30000, silver:45000, bronze:60000});
-      var scoreInfo = null;
+      var scoreInfo = null, extra = null;
       if(mode === "voice"){
-        var okCount = cellEls.filter(function(d){ return d.classList.contains("voice-correct"); }).length;
-        scoreInfo = {ok: okCount, total: cells.length};
+        var okN = 0, badN = 0, missN = 0;
+        cells.forEach(function(c, i){
+          var s = cellState[i];
+          if(s === "ok") okN++; else if(s === "bad") badN++; else missN++;
+        });
+        scoreInfo = {ok: okN, bad: badN, miss: missN, total: cells.length};
+        extra = stroopVoiceBreakdown(cells, cellState, cellHeard, voiceLog, voiceCtlRef);
       }
       var rec = {elapsedMs:elapsedMs, medal:medal, count:cells.length, mode:mode, voiceScore: scoreInfo};
       addRecord("stroop", rec);
       body.innerHTML = "";
       var metrics = [["Tempo total", fmtTime(elapsedMs)], ["Palavras", String(cells.length)]];
-      if(scoreInfo) metrics.unshift(["Acerto por voz", scoreInfo.ok+" / "+scoreInfo.total]);
-      showResult(panel, { big: fmtTime(elapsedMs), medal: medal, metrics: metrics, kind:"stroop", ts:rec.ts, onRepeat:restart });
+      if(scoreInfo){
+        metrics.unshift(["Não captadas pelo microfone", String(scoreInfo.miss)]);
+        metrics.unshift(["Cor certa / errada", scoreInfo.ok + " / " + scoreInfo.bad]);
+      }
+      showResult(panel, { big: fmtTime(elapsedMs), medal: medal, metrics: metrics, extra: extra, kind:"stroop", ts:rec.ts, onRepeat:restart });
     }
 
     return function cleanup(){ if(timerHandle) clearInterval(timerHandle); stopVoiceSeq(); };
