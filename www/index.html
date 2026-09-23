@@ -269,13 +269,32 @@
     display:grid; grid-template-columns:repeat(9,1fr); gap:2px; background:var(--ink); border:2px solid var(--ink);
     max-width:414px; margin:0 auto; border-radius:6px; overflow:hidden;
   }
-  .sudoku-board input{
-    width:100%; aspect-ratio:1; border:none; text-align:center; background:var(--surface); color:var(--ink);
-    font-family:'IBM Plex Mono',monospace; font-size:1.05rem; font-weight:600; padding:0;
+  .sudoku-board .cell{
+    position:relative; aspect-ratio:1; background:var(--surface); color:var(--ink); cursor:pointer;
+    display:flex; align-items:center; justify-content:center; user-select:none; -webkit-user-select:none;
+    font-family:'IBM Plex Mono',monospace; font-size:1.15rem; font-weight:600; padding:0; overflow:hidden;
+    -webkit-tap-highlight-color:transparent;
   }
-  .sudoku-board input.clue{background:var(--surface-2); color:var(--ink-muted);}
-  .sudoku-board input.conflict{background:var(--danger-soft); color:var(--danger);}
-  .sudoku-board .cell{position:relative;}
+  .sudoku-board .cell.clue{background:var(--surface-2); color:var(--ink-muted);}
+  .sudoku-board .cell.peer{background:color-mix(in srgb, var(--accent-soft) 55%, var(--surface));}
+  .sudoku-board .cell.clue.peer{background:color-mix(in srgb, var(--accent-soft) 45%, var(--surface-2));}
+  .sudoku-board .cell.same .val{color:var(--accent);}
+  .sudoku-board .cell.selected{background:var(--accent-soft); box-shadow:inset 0 0 0 2px var(--accent);}
+  .sudoku-board .cell.conflict{background:var(--danger-soft); color:var(--danger);}
+  .sudoku-board .cell.conflict .val{color:var(--danger);}
+  .sudoku-board .cell .notes{display:grid; grid-template-columns:repeat(3,1fr); grid-template-rows:repeat(3,1fr); width:100%; height:100%; padding:1px;}
+  .sudoku-board .cell .notes span{display:flex; align-items:center; justify-content:center; font-size:.58rem; line-height:1; font-weight:600; color:var(--ink-muted);}
+  .sudoku-board .cell .notes span.hl{color:var(--accent);}
+  .sudoku-controls{display:flex; align-items:center; justify-content:center; gap:10px; flex-wrap:wrap; max-width:414px; margin:14px auto 0;}
+  .sudoku-pad{display:grid; grid-template-columns:repeat(5,1fr); gap:8px; max-width:414px; margin:12px auto 0;}
+  .sudoku-pad button{
+    border:1.5px solid var(--border); background:var(--surface); border-radius:12px; padding:12px 0;
+    font-family:'IBM Plex Mono',monospace; font-size:1.25rem; font-weight:600; color:var(--ink); cursor:pointer;
+  }
+  .sudoku-pad button:active{background:var(--surface-2);}
+  .sudoku-pad.notes-on button:not(.sudoku-pad-erase){border-color:var(--accent); color:var(--accent); font-size:1rem; font-style:italic;}
+  .sudoku-pad .sudoku-pad-erase{background:var(--surface-2); color:var(--ink-muted); font-family:'Work Sans',sans-serif;}
+  .sudoku-hint{max-width:414px; margin:12px auto 0; text-align:center; line-height:1.45;}
   .sudoku-board .cell.br{border-right:2px solid var(--ink);}
   .sudoku-board .cell.bb{border-bottom:2px solid var(--ink);}
   .sudoku-msg{text-align:center; margin-top:18px; font-weight:600; color:var(--accent);}
@@ -1702,8 +1721,8 @@
       var kbWrap = el("div",{style:"margin-top:14px;"});
       var kbLabel = el("p",{class:"calc-hint", style:"margin-bottom:8px;"},["Teclado (modo Digitar):"]);
       var kbPicker = el("div",{class:"mode-picker"});
-      var kbAppBtn = el("button",{class:"mode-btn", type:"button", "aria-pressed": typeKeyboardMode==="app"?"true":"false", onclick:function(){ selectKb("app"); }},["🔢 Teclado do app"]);
-      var kbNativeBtn = el("button",{class:"mode-btn", type:"button", "aria-pressed": typeKeyboardMode==="native"?"true":"false", onclick:function(){ selectKb("native"); }},["⌨ Teclado do celular"]);
+      var kbAppBtn = el("button",{class:"mode-btn", type:"button", "aria-pressed": typeKeyboardMode==="app"?"true":"false", onclick:function(){ selectKb("app"); }},["🔢 Teclado do app (na tela)"]);
+      var kbNativeBtn = el("button",{class:"mode-btn", type:"button", "aria-pressed": typeKeyboardMode==="native"?"true":"false", onclick:function(){ selectKb("native"); }},["⌨ Teclado do dispositivo"]);
       kbPicker.appendChild(kbAppBtn); kbPicker.appendChild(kbNativeBtn);
       kbWrap.appendChild(kbLabel); kbWrap.appendChild(kbPicker);
       function selectKb(k){
@@ -2482,8 +2501,17 @@
   }
   var DIFFICULTIES = {facil:{label:"Fácil", clues:42}, medio:{label:"Médio", clues:33}, dificil:{label:"Difícil", clues:26}};
 
+  /* Sudoku com ANOTAÇÕES: a pessoa toca numa casa e depois num número do teclado abaixo do
+     tabuleiro. Com "✏️ Anotar" ligado, os números entram como anotações pequenas (candidatos —
+     ex.: "pode ser 3 ou 8"); tocar de novo no mesmo número desmarca. Para confirmar, desliga o
+     Anotar e toca o número definitivo — isso substitui as anotações daquela casa e apaga esse
+     número das anotações da mesma linha, coluna e quadrado. O estado fica em arrays (values/notes)
+     em vez de nos campos de texto, para cada casa poder mostrar um valor OU uma grade de anotações.
+     No computador também funciona pelo teclado: 1–9, Delete/Backspace, setas e N (anotar). */
   function renderSudoku(root){
     var startTime = null, timerHandle = null, current = null, diffKey = "medio";
+    var values = null, notes = null, selected = null, notesMode = false, finished = false;
+    var cellEls = [];
     var panel = el("div",{class:"panel"});
     var head = el("div",{class:"panel-head"},[
       el("h2",{},["Sudoku"]),
@@ -2503,121 +2531,221 @@
     var toolbar = el("div",{class:"sudoku-toolbar"},[diffSelect, newBtn, solveBtn, clearBtn]);
 
     var board = el("div",{class:"sudoku-board"});
+    var notesBtn = el("button",{class:"mode-btn sudoku-notes-btn", type:"button", "aria-pressed":"false"},["✏️ Anotar: desligado"]);
+    notesBtn.addEventListener("mousedown", function(ev){ ev.preventDefault(); });
+    notesBtn.addEventListener("click", function(){ setNotesMode(!notesMode); });
+    var hint = el("p",{class:"calc-hint sudoku-hint"},["Toque numa casa e depois num número. Com ✏️ Anotar ligado, os números viram anotações pequenas (pode marcar vários, ex.: 3 e 8) — toque de novo para desmarcar. Quando tiver certeza, desligue o Anotar e toque o número definitivo."]);
+    var pad = el("div",{class:"sudoku-pad"});
+    function addPadBtn(label, cls, fn){
+      var b = el("button",{type:"button", class:cls||""},[label]);
+      b.addEventListener("mousedown", function(ev){ ev.preventDefault(); });
+      b.addEventListener("click", fn);
+      pad.appendChild(b);
+      return b;
+    }
+    for(var d=1; d<=9; d++){ (function(dd){ addPadBtn(String(dd), "", function(){ inputDigit(dd); }); })(d); }
+    addPadBtn("⌫", "sudoku-pad-erase", function(){ eraseCell(); });
+    var controls = el("div",{class:"sudoku-controls"},[notesBtn]);
     var msg = el("div",{class:"sudoku-msg"});
     var resultActions = el("div",{class:"actions-row", style:"margin-top:16px; display:none;"});
 
     panel.appendChild(head);
     panel.appendChild(toolbar);
     panel.appendChild(board);
+    panel.appendChild(controls);
+    panel.appendChild(pad);
+    panel.appendChild(hint);
     panel.appendChild(msg);
     panel.appendChild(resultActions);
     root.appendChild(panel);
 
     function tick(){ timerEl.textContent = fmtTime(Date.now()-startTime); }
 
+    function setNotesMode(on){
+      notesMode = !!on;
+      notesBtn.setAttribute("aria-pressed", notesMode ? "true" : "false");
+      notesBtn.textContent = notesMode ? "✏️ Anotar: ligado" : "✏️ Anotar: desligado";
+      pad.classList.toggle("notes-on", notesMode);
+    }
+
     function newGame(){
       diffKey = diffSelect.value;
       current = generateSudoku(DIFFICULTIES[diffKey].clues);
+      values = current.puzzle.map(function(row){ return row.slice(); });
+      notes = [];
+      for(var r=0;r<9;r++){ var nr = []; for(var c=0;c<9;c++) nr.push({}); notes.push(nr); }
+      selected = null; finished = false;
+      setNotesMode(false);
       startTime = Date.now();
       if(timerHandle) clearInterval(timerHandle);
       timerHandle = setInterval(tick, 500);
       msg.textContent = "";
       resultActions.style.display = "none";
       resultActions.innerHTML = "";
-      draw();
+      buildBoard();
+      render();
     }
 
-    function draw(){
+    function isClue(r,c){ return current.puzzle[r][c] !== 0; }
+
+    function buildBoard(){
       board.innerHTML = "";
+      cellEls = [];
       for(var r=0;r<9;r++){
+        var rowEls = [];
         for(var c=0;c<9;c++){
-          var wrap = el("div",{class:"cell"+ (c%3===2 && c!==8 ? " br":"") + (r%3===2 && r!==8 ? " bb":"")});
-          var v = current.puzzle[r][c];
-          var isClue = v!==0;
-          var input = el("input",{
-            type:"text", maxlength:"1", inputmode:"numeric",
-            id:"sud-"+r+"-"+c,
-            class: isClue ? "clue" : ""
-          });
-          if(isClue){ input.value = v; input.disabled = true; }
-          else{
-            input.addEventListener("input", function(rr,cc,inp){ return function(){
-              inp.value = inp.value.replace(/[^1-9]/g,"").slice(0,1);
-              onCellChange(rr,cc);
-              if(inp.value){
-                var nr=rr, nc=cc+1;
-                if(nc>8){ nc=0; nr++; }
-                if(nr<9){ var next = document.getElementById("sud-"+nr+"-"+nc); if(next && !next.disabled) next.focus(); }
-              }
-            };}(r,c,input));
-          }
-          wrap.appendChild(input);
-          board.appendChild(wrap);
+          var cell = el("div",{class:"cell"+ (c%3===2 && c!==8 ? " br":"") + (r%3===2 && r!==8 ? " bb":""), id:"sud-"+r+"-"+c, role:"button", tabindex:"-1"});
+          cell.addEventListener("mousedown", function(ev){ ev.preventDefault(); });
+          cell.addEventListener("click", (function(rr,cc){ return function(){ select(rr,cc); }; })(r,c));
+          rowEls.push(cell);
+          board.appendChild(cell);
         }
+        cellEls.push(rowEls);
       }
     }
 
-    function currentBoardValues(){
-      var b = [];
-      for(var r=0;r<9;r++){
-        var row=[];
-        for(var c=0;c<9;c++){
-          var inp = document.getElementById("sud-"+r+"-"+c);
-          row.push(inp && inp.value ? parseInt(inp.value,10) : 0);
-        }
-        b.push(row);
-      }
-      return b;
+    function select(r,c){
+      if(finished) return;
+      selected = {r:r, c:c};
+      render();
     }
 
-    function onCellChange(){
-      var vals = currentBoardValues();
-      var conflicts = new Array(81).fill(false);
-      for(var r=0;r<9;r++){
-        for(var c=0;c<9;c++){
-          var v = vals[r][c];
+    function conflictsMap(){
+      var conf = [];
+      for(var r=0;r<9;r++){ conf.push(new Array(9).fill(false)); }
+      for(var r2=0;r2<9;r2++){
+        for(var c2=0;c2<9;c2++){
+          var v = values[r2][c2];
           if(!v) continue;
           for(var i=0;i<9;i++){
-            if(i!==c && vals[r][i]===v) conflicts[r*9+c]=true;
-            if(i!==r && vals[i][c]===v) conflicts[r*9+c]=true;
+            if(i!==c2 && values[r2][i]===v) conf[r2][c2]=true;
+            if(i!==r2 && values[i][c2]===v) conf[r2][c2]=true;
           }
-          var br=Math.floor(r/3)*3, bc=Math.floor(c/3)*3;
+          var br=Math.floor(r2/3)*3, bc=Math.floor(c2/3)*3;
           for(var i2=0;i2<3;i2++) for(var j2=0;j2<3;j2++){
             var rr=br+i2, cc=bc+j2;
-            if((rr!==r||cc!==c) && vals[rr][cc]===v) conflicts[r*9+c]=true;
+            if((rr!==r2||cc!==c2) && values[rr][cc]===v) conf[r2][c2]=true;
           }
         }
       }
-      var complete = true;
-      for(var r2=0;r2<9;r2++) for(var c2=0;c2<9;c2++){
-        var inp = document.getElementById("sud-"+r2+"-"+c2);
-        inp.classList.toggle("conflict", conflicts[r2*9+c2]);
-        if(!vals[r2][c2]) complete = false;
+      return conf;
+    }
+
+    function render(){
+      var conf = conflictsMap();
+      var selVal = selected ? values[selected.r][selected.c] : 0;
+      for(var r=0;r<9;r++){
+        for(var c=0;c<9;c++){
+          var cell = cellEls[r][c];
+          var v = values[r][c];
+          var cls = "cell" + (c%3===2 && c!==8 ? " br":"") + (r%3===2 && r!==8 ? " bb":"");
+          if(isClue(r,c)) cls += " clue";
+          if(conf[r][c]) cls += " conflict";
+          if(selected){
+            if(selected.r===r && selected.c===c) cls += " selected";
+            else if(selected.r===r || selected.c===c || (Math.floor(selected.r/3)===Math.floor(r/3) && Math.floor(selected.c/3)===Math.floor(c/3))) cls += " peer";
+            if(selVal && v === selVal) cls += " same";
+          }
+          cell.className = cls;
+          cell.innerHTML = "";
+          if(v){
+            cell.appendChild(el("span",{class:"val"},[String(v)]));
+          } else {
+            var nset = notes[r][c], any = false;
+            var grid = el("div",{class:"notes"});
+            for(var d=1; d<=9; d++){
+              var on = !!nset[d];
+              if(on) any = true;
+              grid.appendChild(el("span",{class: on && selVal === d ? "hl" : ""},[on ? String(d) : ""]));
+            }
+            if(any) cell.appendChild(grid);
+          }
+        }
       }
-      if(complete && conflicts.every(function(x){return !x;})){
-        finish(true);
+    }
+
+    function inputDigit(d){
+      if(finished || !current) return;
+      if(!selected){ msg.textContent = "Toque numa casa do tabuleiro primeiro."; return; }
+      var r = selected.r, c = selected.c;
+      if(isClue(r,c)) return;
+      msg.textContent = "";
+      if(notesMode){
+        if(values[r][c]) values[r][c] = 0; // anotar numa casa preenchida volta ela para anotações
+        notes[r][c][d] = !notes[r][c][d];
+      } else {
+        if(values[r][c] === d){ values[r][c] = 0; } // tocar o mesmo número de novo apaga
+        else {
+          values[r][c] = d;
+          notes[r][c] = {};
+          // O número confirmado some das anotações da mesma linha, coluna e quadrado.
+          var br = Math.floor(r/3)*3, bc = Math.floor(c/3)*3;
+          for(var i=0;i<9;i++){ delete notes[r][i][d]; delete notes[i][c][d]; }
+          for(var i2=0;i2<3;i2++) for(var j2=0;j2<3;j2++) delete notes[br+i2][bc+j2][d];
+        }
       }
+      render();
+      checkComplete();
+    }
+
+    function eraseCell(){
+      if(finished || !selected) return;
+      var r = selected.r, c = selected.c;
+      if(isClue(r,c)) return;
+      values[r][c] = 0; notes[r][c] = {};
+      render();
+    }
+
+    function checkComplete(){
+      for(var r=0;r<9;r++) for(var c=0;c<9;c++) if(!values[r][c]) return;
+      var conf = conflictsMap();
+      for(var r2=0;r2<9;r2++) for(var c2=0;c2<9;c2++) if(conf[r2][c2]) return;
+      finish(true);
     }
 
     function clearInputs(){
+      if(!current || finished) return;
       for(var r=0;r<9;r++) for(var c=0;c<9;c++){
-        var inp = document.getElementById("sud-"+r+"-"+c);
-        if(inp && !inp.disabled){ inp.value=""; inp.classList.remove("conflict"); }
+        if(!isClue(r,c)){ values[r][c] = 0; notes[r][c] = {}; }
       }
       msg.textContent = "";
+      render();
     }
 
     function showSolution(){
-      if(!current) return;
-      for(var r=0;r<9;r++) for(var c=0;c<9;c++){
-        var inp = document.getElementById("sud-"+r+"-"+c);
-        if(!inp.disabled){ inp.value = current.solution[r][c]; inp.classList.remove("conflict"); }
-      }
+      if(!current || finished) return;
+      for(var r=0;r<9;r++) for(var c=0;c<9;c++){ values[r][c] = current.solution[r][c]; notes[r][c] = {}; }
+      render();
       finish(false);
     }
 
+    var keyHandler = function(ev){
+      if(!current || finished) return;
+      var t = ev.target && ev.target.tagName;
+      if(t === "SELECT" || t === "INPUT" || t === "TEXTAREA") return;
+      if(/^[1-9]$/.test(ev.key)){ ev.preventDefault(); inputDigit(parseInt(ev.key,10)); }
+      else if(ev.key === "Backspace" || ev.key === "Delete" || ev.key === "0"){ ev.preventDefault(); eraseCell(); }
+      else if(ev.key === "n" || ev.key === "N"){ ev.preventDefault(); setNotesMode(!notesMode); }
+      else if(/^Arrow/.test(ev.key)){
+        ev.preventDefault();
+        var s = selected || {r:0, c:0};
+        var r = s.r, c = s.c;
+        if(selected){
+          if(ev.key === "ArrowUp") r = (r+8)%9;
+          else if(ev.key === "ArrowDown") r = (r+1)%9;
+          else if(ev.key === "ArrowLeft") c = (c+8)%9;
+          else if(ev.key === "ArrowRight") c = (c+1)%9;
+        }
+        select(r,c);
+      }
+    };
+    document.addEventListener("keydown", keyHandler);
+
     function finish(solved){
       if(timerHandle) clearInterval(timerHandle);
+      finished = true;
+      selected = null;
+      render();
       var elapsedMs = Date.now()-startTime;
       var rec = {elapsedMs:elapsedMs, solved:solved, difficulty:diffKey};
       addRecord("sudoku", rec);
@@ -2636,7 +2764,7 @@
 
     newGame();
 
-    return function cleanup(){ if(timerHandle) clearInterval(timerHandle); };
+    return function cleanup(){ if(timerHandle) clearInterval(timerHandle); document.removeEventListener("keydown", keyHandler); };
   }
 
   /* ============================= SEQUÊNCIA DE NÚMEROS (span de dígitos) ============================= */
