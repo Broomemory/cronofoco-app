@@ -1136,15 +1136,20 @@
     }
   }
 
-  /* ============================= VOZ (Web Speech API + ponte nativa Android) =============================
-     No navegador (inclusive o Artifact publicado), a voz usa a Web Speech API normal. Dentro do app
-     Android empacotado com Capacitor, a Web Speech API não existe na WebView — em vez dela, usamos o
-     plugin @capacitor-community/speech-recognition, que fala com o SpeechRecognizer nativo do Android
-     (pede a permissão RECORD_AUDIO, mesmo mecanismo dos apps do próprio Google).
-     A ponte abaixo (NativeSpeechRecognitionShim) imita a forma como o restante do código já usa a Web
-     Speech API (recognizer.lang, .continuous, .onresult, .onerror, .onend, .start(), .stop()) — assim
-     nenhuma linha das telas de Cálculo Mental e Stroop precisa mudar; elas continuam chamando
-     getSpeechCtor() normalmente e recebem o shim nativo sem saber a diferença. */
+  /* ============================= VOZ (navegador + app Android) =============================
+     O MESMO arquivo roda no site (navegador) e no app Android (Capacitor) — desde a v42 do site / 1.3
+     do app não há mais diferença entre eles. A voz dos exercícios (Cálculo Mental e Desafio das
+     Cores) passa sempre por startVoiceInput() (seção ENTRADA DE VOZ CONTÍNUA, mais abaixo), que escolhe
+     o motor sozinho:
+       - dentro do app Android: plugin nativo CronoVoice (motor do Google, resultados parciais,
+         reinício automático feito no Android);
+       - no navegador (Chrome, Edge, Safari): Web Speech API em modo contínuo, com resultados parciais
+         e reinício automático — exige página em HTTPS (ou localhost/arquivo local) e fora de iframe.
+     Toda a interpretação do que foi dito (números, cores, alinhamento, espera da última palavra,
+     relatório) é a mesma nos dois motores.
+     O NativeSpeechRecognitionShim abaixo é legado da 1ª versão do app (imitava a Web Speech API sobre
+     o plugin @capacitor-community/speech-recognition); hoje só serve para getSpeechCtor() dizer que
+     há voz disponível dentro do app. */
   function isNativePlatform(){
     try{ return !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform()); }
     catch(e){ return false; }
@@ -1612,6 +1617,7 @@
     }
 
     // ---- navegador: Web Speech API ----
+    var MOBILE_BROWSER = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent || "");
     var Ctor = window.SpeechRecognition || window.webkitSpeechRecognition;
     if(!Ctor){ setTimeout(function(){ emitError("audio-capture", true); }, 0); return ctl; }
     var session = 0, rec = null;
@@ -1620,21 +1626,40 @@
       session++;
       var mine = session;
       rec = new Ctor();
-      rec.lang = "pt-BR"; rec.continuous = true; rec.interimResults = true; rec.maxAlternatives = 5;
+      // Celular (Chrome Android / Safari iOS): o modo contínuo da Web Speech API é instável e repete
+      // trechos já ditos nos resultados seguintes — então lá cada frase é uma sessão (continuous =
+      // false) e o onend abaixo reabre a escuta, igual ao que o plugin nativo faz no app.
+      // No computador, o modo contínuo funciona bem e evita a pausa entre uma frase e outra.
+      rec.lang = "pt-BR"; rec.continuous = !MOBILE_BROWSER; rec.interimResults = true; rec.maxAlternatives = 5;
       rec.onstart = function(){ if(mine === session) emitState("ready"); };
       rec.onspeechstart = function(){ if(mine === session) emitState("speech"); };
+      /* Cada FRASE que o navegador reconhece vira uma "sessão" própria para os exercícios — igual ao
+         plugin nativo, em que cada frase é uma sessão. No modo contínuo o Chrome acumula as frases em
+         ev.results (as finais não mudam mais; a última pode ser parcial). Mandar o texto acumulado da
+         escuta inteira quebrava a conta quando uma resposta tinha vindo de uma ALTERNATIVA (o texto
+         principal acumulado não tem aquele número, e a contagem de números da sessão se desalinhava).
+         Então: cada resultado final é entregue sozinho, com as alternativas dele; os resultados ainda
+         parciais do fim são entregues juntos, como a frase em andamento, com o índice do primeiro deles. */
       rec.onresult = function(ev){
         if(mine !== session) return;
-        var parts = [], fin = true;
-        for(var i=0;i<ev.results.length;i++){ parts.push(ev.results[i][0].transcript); if(!ev.results[i].isFinal) fin = false; }
-        var last = ev.results[ev.results.length-1], prefix = parts.slice(0,-1).join(" "), alts = [];
-        for(var k=0;k<last.length;k++) alts.push((prefix ? prefix+" " : "") + last[k].transcript);
-        emitText(parts.join(" "), fin, alts, "w"+mine);
+        var res = ev.results, j = ev.resultIndex || 0;
+        for(; j < res.length && res[j].isFinal; j++){
+          var alts = [];
+          for(var k=0;k<res[j].length;k++) alts.push(res[j][k].transcript);
+          emitText(res[j][0].transcript, true, alts, "w" + mine + "." + j);
+        }
+        if(j < res.length){
+          var parts = [];
+          for(var q=j; q<res.length; q++) parts.push(res[q][0].transcript);
+          emitText(parts.join(" "), false, [parts.join(" ")], "w" + mine + "." + j);
+        }
       };
       rec.onerror = function(ev){
         if(ev.error === "not-allowed" || ev.error === "service-not-allowed") emitError("not-allowed", true);
         else if(ev.error === "audio-capture") emitError("audio-capture", true);
         else if(ev.error === "network") emitError("network", false);
+        else if(ev.error === "language-not-supported") emitError("language", true);
+        // "no-speech" (silêncio) e "aborted" são normais: o onend abaixo volta a ouvir.
       };
       rec.onend = function(){ if(!ctl.stopped && mine === session){ emitState("end"); setTimeout(begin, 150); } };
       try{ rec.start(); }catch(e){ setTimeout(begin, 400); }
@@ -1648,6 +1673,7 @@
   // Painel "Pode falar / Ouvi: ..." com medidor de volume — mostra quando o app está ouvindo
   // e o que ele entendeu, pra pessoa saber se precisa repetir.
   var NATIVE_NO_MIC_MSG = "Não consegui usar o microfone. Feche outros apps que possam estar usando o microfone (gravador, ligação, assistente) e tente de novo.";
+  var BROWSER_LANG_MSG = "Este navegador não oferece reconhecimento de voz em português. Use o Google Chrome ou o Microsoft Edge atualizados, ou o modo sem voz.";
   var NATIVE_LANG_MSG = "O reconhecimento de voz em português não está disponível neste aparelho. Atualize o app Google e baixe o idioma Português (Brasil) em Configurações → Google → Configurações dos apps do Google → Pesquisa, Assistente e Voz → Voz → Idiomas.";
   function makeVoiceStatus(){
     var label = el("span",{class:"vs-label"},["⏳ Ligando o microfone…"]);
@@ -1672,9 +1698,11 @@
       },
       error: function(code, fatal){
         var msg;
-        if(code === "not-allowed") msg = "Permissão de microfone negada. Libere o microfone para o Cronofoco nas configurações do Android, ou use o modo sem voz.";
+        if(code === "not-allowed") msg = isNativePlatform()
+          ? "Permissão de microfone negada. Libere o microfone para o Cronofoco nas configurações do Android, ou use o modo sem voz."
+          : "Permissão de microfone negada. Clique no cadeado (ou no ícone de microfone) ao lado do endereço do site, permita o microfone e recarregue a página — ou use o modo sem voz.";
         else if(code === "audio-capture") msg = isNativePlatform() ? NATIVE_NO_MIC_MSG : NO_MIC_MSG;
-        else if(code === "language") msg = NATIVE_LANG_MSG;
+        else if(code === "language") msg = isNativePlatform() ? NATIVE_LANG_MSG : BROWSER_LANG_MSG;
         else if(code === "network") msg = "⚠️ Sem conexão com a internet? O reconhecimento de voz precisa de internet.";
         else msg = "O reconhecimento de voz parou (" + code + ").";
         if(fatal){ errored = true; root.setAttribute("data-state","error"); label.textContent = msg; }

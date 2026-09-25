@@ -1,7 +1,9 @@
 // Teste da voz do Desafio das Cores (Stroop) com o plugin nativo simulado (sem celular).
 // Uso: npm install playwright && npx playwright install chromium && node voz-stroop.js   (opcional: CHROMIUM_PATH)
 const { chromium } = require('playwright'); const fs = require('fs'); const path = require('path'); const os = require('os');
-const MOCK = require('./mock-cronovoice.js');
+// MOCK=./mock-webspeech.js testa o motor do navegador (Web Speech API); o padrão é o plugin nativo do app.
+// UA="...Android..." simula um navegador de celular (uma frase por sessão).
+const MOCK = require(process.env.MOCK || './mock-cronovoice.js');
 const HTML = process.env.HTML || path.resolve(__dirname, '../../www/index.html');
 const OUT = path.join(os.tmpdir(), 'cronofoco_voz_stroop.html');
 fs.writeFileSync(OUT,'<!doctype html><html><head><meta charset="utf-8"></head><body>'+fs.readFileSync(HTML,'utf8')+'</body></html>');
@@ -11,7 +13,7 @@ let fails=0; const check=(n,c,x)=>{console.log((c?'OK   ':'FALHA')+' '+n+(x?'  '
 const HEX = {'#3B6FE0':'azul','#D6453D':'vermelho','#D0A400':'amarelo','#2E9A5E':'verde','#8B5AD1':'roxo','#E07E28':'laranja'};
 (async()=>{
   const b = await chromium.launch(LAUNCH);
-  const p = await b.newPage({viewport:{width:420,height:900}}); const errs=[]; p.on('pageerror',e=>errs.push(e.message));
+  const p = await b.newPage(Object.assign({viewport:{width:420,height:900}}, process.env.UA ? {userAgent: process.env.UA} : {})); const errs=[]; p.on('pageerror',e=>errs.push(e.message));
   await p.addInitScript(MOCK);
   // licença VASSOURA (modo revisão) para o Desafio das Cores estar liberado
   await p.addInitScript(()=>localStorage.setItem('cronofoco_license_v1', JSON.stringify({n:'Teste', h:'8fde074ca42ca9b1e8ebc9f64057ad791d37c41b5729d5461a42c22b63293d3d'})));

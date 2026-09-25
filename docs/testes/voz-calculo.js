@@ -1,7 +1,9 @@
 // Teste da voz do Cálculo Mental com o plugin nativo simulado (sem celular).
 // Uso: npm install playwright && npx playwright install chromium && node voz-calculo.js   (opcional: CHROMIUM_PATH)
 const { chromium } = require('playwright'); const fs = require('fs'); const path = require('path'); const os = require('os');
-const MOCK = require('./mock-cronovoice.js');
+// MOCK=./mock-webspeech.js testa o motor do navegador (Web Speech API); o padrão é o plugin nativo do app.
+// UA="...Android..." simula um navegador de celular (uma frase por sessão).
+const MOCK = require(process.env.MOCK || './mock-cronovoice.js');
 const HTML = process.env.HTML || path.resolve(__dirname, '../../www/index.html');
 const OUT = path.join(os.tmpdir(), 'cronofoco_voz_calc.html');
 fs.writeFileSync(OUT,'<!doctype html><html><head><meta charset="utf-8"></head><body>'+fs.readFileSync(HTML,'utf8')+'</body></html>');
@@ -11,7 +13,7 @@ let fails=0; const check=(n,c,x)=>{console.log((c?'OK   ':'FALHA')+' '+n+(x?'  '
 const ext = {0:'zero',1:'um',2:'dois',3:'três',4:'quatro',5:'cinco',6:'seis',7:'sete',8:'oito',9:'nove',10:'dez',11:'onze',12:'doze',13:'treze',14:'catorze',15:'quinze',16:'dezesseis',17:'dezessete',18:'dezoito',19:'dezenove',20:'vinte',21:'vinte e um',24:'vinte e quatro',25:'vinte e cinco',27:'vinte e sete',28:'vinte e oito',30:'trinta',32:'trinta e dois',35:'trinta e cinco',36:'trinta e seis',40:'quarenta',42:'quarenta e dois',45:'quarenta e cinco',48:'quarenta e oito',49:'quarenta e nove',50:'cinquenta',54:'cinquenta e quatro',56:'cinquenta e seis',60:'sessenta',63:'sessenta e três',64:'sessenta e quatro',70:'setenta',72:'setenta e dois',80:'oitenta',81:'oitenta e um',90:'noventa',100:'cem'};
 (async()=>{
   const b = await chromium.launch(LAUNCH);
-  const p = await b.newPage({viewport:{width:420,height:900}}); const errs=[]; p.on('pageerror',e=>errs.push(e.message));
+  const p = await b.newPage(Object.assign({viewport:{width:420,height:900}}, process.env.UA ? {userAgent: process.env.UA} : {})); const errs=[]; p.on('pageerror',e=>errs.push(e.message));
   await p.addInitScript(MOCK); await p.goto('file://'+OUT); await wait(300);
   await p.evaluate(()=>{for(const c of document.querySelectorAll('.card')) if(c.textContent.includes('Cálculo Mental')){c.querySelector('button.btn').click();break;}});
   await wait(150);
@@ -59,18 +61,18 @@ const ext = {0:'zero',1:'um',2:'dois',3:'três',4:'quatro',5:'cinco',6:'seis',7:
   await p.evaluate(([t,a])=>window.__cv.emit('voiceResult',{session:window.__cv.session, matches:[t,a]}), ['a gente', String(a5)]); await wait(300);
   check('usa alternativa com número no fim da frase', (await okc()) === 5, 'ok='+(await okc()));
   // 6) erro de verdade
-  let a6 = await ans(); await p.evaluate(()=>window.__cv.final('')); await say(String(a6+1), true); await wait(300);
+  let a6 = await ans(); await p.evaluate(()=>window.__cv.final('')); await wait(400); /* pausa natural entre frases */ await say(String(a6+1), true); await wait(300);
   check('número errado vira ✗', (await badc()) === 1);
   // 7) reconhecedor "gruda" a resposta nova na anterior: 20 → "21", 10 → "100"
   const setQ = async (a, op, b) => p.evaluate(()=>0);
   const forceAnswerSeq = async (seqTexts) => { for (const t of seqTexts) { await p.evaluate(t=>window.__cv.partial(t), t); await wait(1000); } };
   // descobre as respostas das próximas duas contas e força o cenário com valores reais
-  let b1 = await ans(); await p.evaluate(()=>window.__cv.final('')); // sessão nova
+  let b1 = await ans(); await p.evaluate(()=>window.__cv.final('')); await wait(400); // sessão nova (pausa natural entre frases)
   const okBefore = await okc(), badBefore = await badc();
   await p.evaluate(t=>window.__cv.partial(t), String(b1)); await wait(1000);    // registra b1
   let b2 = await ans();
   // texto grudado: b1 seguido de b2 (ex.: "20" + "1" → "201" ou "21" se b1 for dezena)
-  const glued = (b1 >= 20 && b1 < 100 && b1 % 10 === 0 && b2 >= 1 && b2 <= 9) ? String(b1 + b2) : String(b1) + String(b2);
+  const glued = (b1 >= 20 && b1 < 100 && b1 % 10 === 0 && b2 >= 1 && b2 <= 9) ? String(b1 + b2) : (b1 === 0 ? '0 ' + b2 : String(b1) + String(b2)); // "0"+"4" não vira "04" na vida real
   await p.evaluate(t=>window.__cv.partial(t), glued); await wait(1000);
   check('resposta "grudada" na anterior pelo reconhecedor é separada ('+b1+' + '+b2+' → "'+glued+'")', (await okc()) === okBefore + 2 && (await badc()) === badBefore, 'ok '+okBefore+'→'+(await okc()));
   // 8) botão pular
