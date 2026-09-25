@@ -1,14 +1,15 @@
 # 05 — Voz nos exercícios
 
-Só dois exercícios usam voz: **Cálculo Mental** e **Desafio das Cores (Stroop)**. No app, os dois
-trocaram a lógica de voz do site por uma mais robusta, descrita aqui. O resto de cada tela é igual
-ao site.
+Só dois exercícios usam voz: **Cálculo Mental** e **Desafio das Cores (Stroop)**. A lógica descrita
+aqui nasceu no app e, desde a 1.3 / site v42, é **a mesma no site** (o arquivo é o mesmo). Ela não
+depende do motor: recebe texto por frase de `startVoiceInput` ([04](04-camada-de-voz-js.md)), venha
+ele do plugin nativo ou da Web Speech API do navegador. Linhas citadas = app 1.3 = site v42.
 
 ---
 
 ## Cálculo Mental por voz
 
-Código: `startCalcVoice()` (linha ~2525), `skipVoiceQuestion()` (~2591) e `renderQuestionVoice()`
+Código: `startCalcVoice()` (linha ~2553), `skipVoiceQuestion()` (~2619) e `renderQuestionVoice()`
 dentro de `renderCalc`; funções de apoio na seção VOZ.
 
 ### Ideia
@@ -36,7 +37,7 @@ reconhecedor vira uma lista de números na ordem falada, e cada número novo res
 Fala sem número ("hã", "é…") é ignorada. O botão **⏭ Pular esta conta** registra a conta como
 não acertada ("pulada").
 
-### `extractSpokenNumbers(texto)` (linha ~1322)
+### `extractSpokenNumbers(texto)` (linha ~1327)
 
 | Regra | Exemplo |
 |---|---|
@@ -49,7 +50,7 @@ não acertada ("pulada").
 
 Operações reconhecidas (`NUM_OPS`): mais, menos, vezes, x, por, dividido, e os símbolos × * + ÷ / −.
 
-### `numberAddedTo(antes, agora)` (linha ~1353)
+### `numberAddedTo(antes, agora)` (linha ~1358)
 
 | Antes → agora | Resposta nova |
 |---|---|
@@ -67,7 +68,7 @@ reconhecedor.
 
 ## Desafio das Cores (Stroop) por voz
 
-Código: `startVoiceSequence()` (linha ~2776) em `renderStroop`; `extractColorTokens`,
+Código: `startVoiceSequence()` (linha ~2804) em `renderStroop`; `extractColorTokens`,
 `alignColorTokens` na seção VOZ.
 
 ### Ideia: conferência por ALINHAMENTO
@@ -80,7 +81,7 @@ do reconhecedor são **alinhadas** com a grade (como um "diff"), e cada palavra 
 - **bad** — disse outra cor (vermelho, "ouvi X");
 - **miss** — o microfone não captou nada ali (cinza tracejado, **não conta como erro**).
 
-### `alignColorTokens(ouvidas, esperadas)` (linha ~1438)
+### `alignColorTokens(ouvidas, esperadas)` (linha ~1443)
 
 Programação dinâmica (distância de edição) com custos: acerto **0**, cor trocada **1**, palavra da
 grade não captada **1,2**, palavra ouvida sobrando **1,5**. Olha no máximo 4 palavras além do número
@@ -91,6 +92,9 @@ define onde fica o ponteiro.
 **uma** cor ouvida após a falha, o menor custo é "cor errada" (1) e não "não captada + certa" (1,2):
 `[azul, amarelo]` contra a grade `[azul, vermelho, amarelo]` vira *certa, errada*. Com duas ou mais
 cores depois da falha, o alinhamento acerta (*certa, não captada, certa, certa…*). Ver `testes/unit.js`.
+Com **cores repetidas em sequência** na grade (ex.: azul, azul, verde, verde), "perdida" e "trocada"
+podem ficar indistinguíveis e a marca pode cair como "errada"; o `testes/voz-stroop.js` escolhe
+sempre um caso sem essa ambiguidade.
 
 ### Fluxo
 
@@ -102,7 +106,7 @@ cores depois da falha, o alinhamento acerta (*certa, não captada, certa, certa�
 - Frase final sem cor na principal → tenta as alternativas.
 - Ao chegar ao fim da grade, `finish()`.
 
-### Reconhecimento de cores — `extractColorTokens(texto)` (linha ~1413)
+### Reconhecimento de cores — `extractColorTokens(texto)` (linha ~1418)
 
 1. Separa por qualquer caractere que não seja letra/número (o Android devolve pontuação: "Azul, vermelho.").
 2. Palavra cortada em duas: "a sul"/"as sul" → azul; "ver de" → verde.

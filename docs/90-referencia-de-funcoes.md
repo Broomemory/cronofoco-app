@@ -1,8 +1,8 @@
-# 90 — Referência de funções (www/index.html do app 1.2)
+# 90 — Referência de funções (www/index.html do app 1.3)
 
-Gerada a partir de `www/index.html` do **app 1.2** (números de linha deste arquivo). **🎙 só no app**
-marca o que não existe no site; o restante é idêntico ao site v41 (descrições detalhadas na
-documentação do site). Funções internas das telas aparecem em "Internas".
+Gerada a partir de `www/index.html` do **app 1.3** (números de linha deste arquivo). Desde a 1.3 o
+arquivo é **idêntico** ao `cronofoco.html` do site v42 — não há mais nada "só no app"; a mesma
+tabela está na documentação do site. Funções internas das telas aparecem em "Internas".
 
 ## Data (linha 629)
 
@@ -37,6 +37,8 @@ documentação do site). Funções internas das telas aparecem em "Internas".
 
 | Linha | Nome | Tipo | Descrição |
 |---|---|---|---|
+| 971 | `$(sel, root)` | função | querySelector abreviado (root opcional). |
+| 972 | `$all(sel, root)` | função | querySelectorAll como array. |
 | 973 | `el(tag, attrs, children)` | função | Cria um elemento: class, html (innerHTML), on… (listener), demais atributos; filhos string ou nó. |
 | 984 | `normWord(s)` | função | Minúsculas, sem acento, sem espaços nas pontas. |
 | 987 | `fmtTime(ms)` | função | Milissegundos → mm:ss. |
@@ -63,302 +65,287 @@ documentação do site). Funções internas das telas aparecem em "Internas".
 | 1080 | `renderGate(errorMsg)` | função | Desenha a tela de acesso (nome + código) e valida o código. **Internas:** submit (1089) |
 | 1128 | `initGate()` | função | Ponto de entrada: libera direto se houver licença válida, senão mostra a tela de acesso. |
 
-## Voz (web speech api + ponte nativa android) (linha 1139)
+## Voz (navegador + app android) (linha 1139)
 
 | Linha | Nome | Tipo | Descrição |
 |---|---|---|---|
-| 1148 | `isNativePlatform()` | função | Verdadeiro só dentro do APK (Capacitor nativo). **🎙 só no app** |
-| 1152 | `nativeSpeechPlugin()` | função | Plugin da comunidade — usado só para pedir a permissão de microfone. **🎙 só no app** |
-| 1164 | `NativeSpeechRecognitionShim()` | função | Legado: imita a Web Speech API sobre o plugin da comunidade; hoje só indica que há voz. **🎙 só no app** |
-| 1250 | `getSpeechCtor()` | função | No app devolve o shim nativo; no navegador, a Web Speech API. |
-| 1254 | `speechSupported()` | função | Há reconhecimento de voz no navegador? |
-| 1255 | `inIframe()` | função | A página está dentro de um iframe (ex.: página publicada do Claude)? |
-| 1265 | `voiceUsable()` | função | Suporte a voz e fora de iframe. |
-| 1266 | `voiceUnavailableReason()` | função | Texto explicando por que a voz está indisponível. |
-| 1276 | `micDeviceAvailable()` | função | Even outside the iframe, the browser can only ask for mic permission if the OS/browser reports an actual microphone device. |
-| 1283 | `NO_MIC_MSG` | constante | Mensagem quando não há microfone. |
-| 1285 | `PT_NUM_WORDS` | constante | Números por extenso (zero a cem) → valor. |
-| 1290 | `wordsToNumber(text)` | função | Soma as palavras numéricas de um texto, ignorando pontuação. |
-| 1302 | `parseSpokenNumber(text)` | função | Último grupo de dígitos do texto, ou wordsToNumber. |
-| 1313 | `NUM_ALIASES` | constante | Palavras que o reconhecedor confunde com números (deus→10, novo→9, sem→100, hum→1…). **🎙 só no app** |
-| 1316 | `NUM_OPS` | constante | Palavras/símbolos de operação (mais, menos, vezes…) — números colados a elas são ignorados. **🎙 só no app** |
-| 1317 | `numWordValue(tok)` | função | Valor de uma palavra numérica (PT_NUM_WORDS ou NUM_ALIASES). **🎙 só no app** |
-| 1322 | `extractSpokenNumbers(text)` | função | Todos os números de um texto falado, na ordem (junta dezena+unidade e centena). **🎙 só no app** **Internas:** flush (1326) |
-| 1353 | `numberAddedTo(prev, now)` | função | Recupera a resposta que o reconhecedor "grudou" na anterior (20→21 dá 1). **🎙 só no app** |
-| 1360 | `firstSpokenNumber(texts)` | função | Primeiro número encontrado numa lista de textos. **🎙 só no app** |
-| 1368 | `COLOR_ALIASES` | constante | Variações faladas de cada cor (feminino, plural, erros comuns). **🎙 só no app** |
-| 1376 | `COLOR_LOOKUP` | constante | Mapa palavra → id da cor, montado de COLOR_ALIASES. **🎙 só no app** |
-| 1384 | `colorPhon(w)` | função | Forma fonética simplificada de uma palavra (h→r, x→ch, final →o…). **🎙 só no app** |
-| 1387 | `editDist(a, b)` | função | Distância de edição (Levenshtein). **🎙 só no app** |
-| 1397 | `COLOR_PHON` | constante | Formas fonéticas de vermelho, amarelo, roxo e laranja (verde e azul ficam de fora). **🎙 só no app** |
-| 1403 | `fuzzyColor(tok)` | função | Cor por aproximação de som (até 1 letra de diferença; 2 nas palavras longas). **🎙 só no app** |
-| 1413 | `extractColorTokens(text)` | função | Ids das cores citadas num texto, na ordem (aliases, palavras cortadas, aproximação por som). |
-| 1438 | `alignColorTokens(tokens, expected)` | função | Alinha cores ouvidas com a grade (ok / bad / miss) por programação dinâmica. **🎙 só no app** |
-| 1470 | `colorName(id)` | função | Nome da cor pelo id. **🎙 só no app** |
-| 1472 | `copyText(text)` | função | Copia texto para a área de transferência (com alternativa por execCommand). **🎙 só no app** **Internas:** fallback (1473) |
-| 1489 | `stroopVoiceBreakdown(cells, states, heard, log, ctl)` | função | Grade palavra por palavra do Stroop por voz + relatório de voz. **🎙 só no app** |
-| 1514 | `voiceReportBlock(wrap, title, resultLine, linesTitle, lines, log, ctl)` | função | Botão "Copiar relatório de voz" e bloco com o registro do reconhecedor. **🎙 só no app** |
+| 1153 | `isNativePlatform()` | função | Verdadeiro só dentro do APK (Capacitor nativo); decide motor de voz e textos de erro. |
+| 1157 | `nativeSpeechPlugin()` | função | Plugin da comunidade — usado só para pedir a permissão de microfone. |
+| 1169 | `NativeSpeechRecognitionShim()` | função | Legado: imita a Web Speech API sobre o plugin da comunidade; hoje só indica que há voz. |
+| 1255 | `getSpeechCtor()` | função | No app devolve o shim nativo; no navegador, window.SpeechRecognition ou webkitSpeechRecognition. |
+| 1259 | `speechSupported()` | função | Há motor de voz (Web Speech API no navegador ou shim no app)? |
+| 1260 | `inIframe()` | função | A página está dentro de um iframe (ex.: página publicada do Claude)? |
+| 1270 | `voiceUsable()` | função | Suporte a voz e fora de iframe. |
+| 1271 | `voiceUnavailableReason()` | função | Texto explicando por que a voz está indisponível. |
+| 1281 | `micDeviceAvailable()` | função | No navegador, confere (enumerateDevices) se existe microfone antes de pedir permissão. |
+| 1288 | `NO_MIC_MSG` | constante | Mensagem quando não há microfone. |
+| 1290 | `PT_NUM_WORDS` | constante | Números por extenso (zero a cem) → valor. |
+| 1295 | `wordsToNumber(text)` | função | Soma as palavras numéricas de um texto, ignorando pontuação. |
+| 1307 | `parseSpokenNumber(text)` | função | Último grupo de dígitos do texto, ou wordsToNumber. |
+| 1318 | `NUM_ALIASES` | constante | Palavras que o reconhecedor confunde com números (deus→10, novo→9, sem→100, hum→1…). |
+| 1321 | `NUM_OPS` | constante | Palavras/símbolos de operação (mais, menos, vezes…) — números colados a elas são ignorados. |
+| 1322 | `numWordValue(tok)` | função | Valor de uma palavra numérica (PT_NUM_WORDS ou NUM_ALIASES). |
+| 1327 | `extractSpokenNumbers(text)` | função | Todos os números de um texto falado, na ordem (junta dezena+unidade e centena). **Internas:** flush (1331) |
+| 1358 | `numberAddedTo(prev, now)` | função | Recupera a resposta que o reconhecedor "grudou" na anterior (20→21 dá 1). |
+| 1365 | `firstSpokenNumber(texts)` | função | Primeiro número encontrado numa lista de textos. |
+| 1373 | `COLOR_ALIASES` | constante | Variações faladas de cada cor (feminino, plural, erros comuns). |
+| 1381 | `COLOR_LOOKUP` | constante | Mapa palavra → id da cor, montado de COLOR_ALIASES. |
+| 1389 | `colorPhon(w)` | função | Forma fonética simplificada de uma palavra (h→r, x→ch, final →o…). |
+| 1392 | `editDist(a, b)` | função | Distância de edição (Levenshtein). |
+| 1402 | `COLOR_PHON` | constante | Formas fonéticas de vermelho, amarelo, roxo e laranja (verde e azul ficam de fora). |
+| 1408 | `fuzzyColor(tok)` | função | Cor por aproximação de som (até 1 letra de diferença; 2 nas palavras longas). |
+| 1418 | `extractColorTokens(text)` | função | Ids das cores citadas num texto, na ordem (aliases, palavras cortadas, aproximação por som). |
+| 1443 | `alignColorTokens(tokens, expected)` | função | Alinha cores ouvidas com a grade (ok / bad / miss) por programação dinâmica. |
+| 1475 | `colorName(id)` | função | Nome da cor pelo id. |
+| 1477 | `copyText(text)` | função | Copia texto para a área de transferência (com alternativa por execCommand). **Internas:** fallback (1478) |
+| 1494 | `stroopVoiceBreakdown(cells, states, heard, log, ctl)` | função | Grade palavra por palavra do Stroop por voz + relatório de voz. |
+| 1519 | `voiceReportBlock(wrap, title, resultLine, linesTitle, lines, log, ctl)` | função | Botão "Copiar relatório de voz" e bloco com o registro do reconhecedor. |
 
-## Entrada de voz contínua (linha 1540)
-
-| Linha | Nome | Tipo | Descrição |
-|---|---|---|---|
-| 1548 | `cronoVoicePlugin()` | função | Obtém o plugin nativo CronoVoice (null fora do app). **🎙 só no app** |
-| 1558 | `startVoiceInput(h)` | função | Entrada de voz contínua: onText/onState/onLevel/onError; devolve {stop, restart, service, log}. **🎙 só no app** **Internas:** log (1562), emitText (1566), emitState (1571), emitError (1577), begin (1618) |
-| 1650 | `NATIVE_NO_MIC_MSG` | constante | Mensagem quando o microfone está ocupado/indisponível no Android. **🎙 só no app** |
-| 1651 | `NATIVE_LANG_MSG` | constante | Mensagem quando falta o idioma Português (Brasil) no reconhecimento do aparelho. **🎙 só no app** |
-| 1652 | `makeVoiceStatus()` | função | Painel "Pode falar / Ouvi:" com medidor de volume e mensagens de erro. **🎙 só no app** |
-
-## História maluca (ajuda de memorização) (linha 1690)
+## Entrada de voz contínua (linha 1545)
 
 | Linha | Nome | Tipo | Descrição |
 |---|---|---|---|
-| 1695 | `STORY_LINKS` | constante | Modelos de cena com 2 palavras para as cenas de associação da Memorização. |
-| 1729 | `genStoryTemplateSequence(total)` | função | Sequência "saco embaralhado": consome os modelos em ordem aleatória sem repetir nenhum até esgotar o baralho, e ao reiniciar evita repetir o mesmo modelo bem na emenda entre um ciclo e outro. |
-| 1742 | `STORY_LINKS_3` | constante | Cenas com 3 palavras — usadas só quando a lista tem quantidade ímpar (a última cena leva 3). |
-| 1755 | `buildCrazyStory(words)` | função | Monta as cenas de associação (2 palavras por cena) e devolve HTML de lista numerada. |
+| 1553 | `cronoVoicePlugin()` | função | Obtém o plugin nativo CronoVoice (null fora do app). |
+| 1563 | `startVoiceInput(h)` | função | Entrada de voz única dos exercícios: escolhe o motor (CronoVoice no app, Web Speech API no navegador) e entrega uma frase por sessão; onText/onState/onLevel/onError; devolve {stop, restart, service, log}. **Internas:** log (1567), emitText (1571), emitState (1576), emitError (1582), begin (1624) |
+| 1675 | `NATIVE_NO_MIC_MSG` | constante | Mensagem quando o microfone está ocupado/indisponível no Android. |
+| 1676 | `BROWSER_LANG_MSG` | constante | Mensagem quando o navegador não reconhece português (usar Chrome ou Edge). |
+| 1677 | `NATIVE_LANG_MSG` | constante | Mensagem quando falta o idioma Português (Brasil) no reconhecimento do aparelho. |
+| 1678 | `makeVoiceStatus()` | função | Painel "Pode falar / Ouvi:" com medidor de volume (app) e mensagens de erro próprias do navegador ou do Android. |
 
-## Storage (linha 1776)
-
-| Linha | Nome | Tipo | Descrição |
-|---|---|---|---|
-| 1777 | `loadHistory()` | função | Lê o histórico, garantindo um array para cada tipo de ALL_KINDS. |
-| 1787 | `saveHistory(h)` | função | Grava o histórico. |
-| 1790 | `addRecord(kind, rec)` | função | Acrescenta um registro (com ts), limita a 200 por tipo e grava. |
-| 1801 | `discardRecord(kind, ts)` | função | Permite descartar um resultado já salvo (ex.: sessão interrompida por alguém, tempo/acerto não representativo) sem precisar apagar todo o histórico daquele exercício. |
-| 1808 | `medalFor(elapsedMs, thresholds)` | função | Medalha pelo tempo: ouro/prata/bronze/null conforme limites. |
-| 1814 | `MEDAL_LABEL` | constante | Rótulos das medalhas. |
-| 1815 | `MEDAL_COLORVAR` | constante | Variável CSS de cor de cada medalha. |
-| 1816 | `DIFFS_LABEL` | constante | Rótulos Fácil/Médio/Difícil. |
-| 1822 | `calcLeaderboards()` | função | Ranking interno do Cálculo Mental: como o total de contas por sessão agora varia (30 a 200), um "tempo total" só é comparável dentro da mesma quantidade — por isso o critério principal é sempre a quantidade de contas res |
-
-## Icons (linha 1836)
+## História maluca (ajuda de memorização) (linha 1718)
 
 | Linha | Nome | Tipo | Descrição |
 |---|---|---|---|
-| 1837 | `ICONS` | constante | SVGs inline de exercícios, categorias de dicas e passatempos. |
-| 1865 | `homeBtn(view)` | função | Botão padrão das telas de configuração: volta para o início (ou para os passatempos) sem começar. |
+| 1723 | `STORY_LINKS` | constante | Modelos de cena com 2 palavras para as cenas de associação da Memorização. |
+| 1757 | `genStoryTemplateSequence(total)` | função | Sequência "saco embaralhado": consome os modelos em ordem aleatória sem repetir nenhum até esgotar o baralho, e ao reiniciar evita repetir o mesmo modelo bem na emenda entre um ciclo e outro. |
+| 1770 | `STORY_LINKS_3` | constante | Cenas com 3 palavras — usadas só quando a lista tem quantidade ímpar (a última cena leva 3). |
+| 1783 | `buildCrazyStory(words)` | função | Monta as cenas de associação (2 palavras por cena) e devolve HTML de lista numerada. |
 
-## Router (linha 1870)
-
-| Linha | Nome | Tipo | Descrição |
-|---|---|---|---|
-| 1873 | `setView(name, opts)` | função | Roteador: limpa a tela atual, marca a aba e chama o render da view. |
-
-## Home (linha 1909)
+## Storage (linha 1804)
 
 | Linha | Nome | Tipo | Descrição |
 |---|---|---|---|
-| 1915 | `EXERCISES` | constante | Cadastro dos 14 exercícios da trilha (key, title, desc, icon, view, unlockAt). |
-| 1931 | `ALL_KINDS` | constante | Todos os tipos de histórico (trilha + concursos + passatempos). |
-| 1933 | `TRAIL_KINDS` | constante | Sessões que contam para a trilha de desbloqueio: tudo, menos os passatempos. |
-| 1936 | `UNLOCK_EARNED_KEY` | constante | Exercício que já foi liberado uma vez nunca volta a ficar bloqueado (ex.: quem liberou coisas quando o Sudoku ainda contava para a trilha continua com elas abertas). |
-| 1937 | `loadEarnedUnlocked()` | função | Lê cronofoco_unlock_earned_v1. |
-| 1938 | `saveEarnedUnlocked(keys)` | função | Grava cronofoco_unlock_earned_v1. |
-| 1942 | `UNLOCK_SEEN_KEY` | constante | Chave dos exercícios que a pessoa já viu liberados (aviso de novo exercício). |
-| 1943 | `loadSeenUnlocked()` | função | Lê cronofoco_unlock_seen_v1. |
-| 1949 | `saveSeenUnlocked(keys)` | função | Grava cronofoco_unlock_seen_v1. |
-| 1953 | `lastRecordChip(kind)` | função | Resumo de uma linha da última sessão de um tipo (card do Início e dos Passatempos). |
-| 2001 | `computeStreak()` | função | Dias seguidos, até hoje, com pelo menos uma sessão. |
-| 2019 | `renderHome(root)` | função | Tela Início: números, aviso de desbloqueio, painel de próximo desbloqueio, cards. **Internas:** isUnlocked (2030) |
+| 1805 | `loadHistory()` | função | Lê o histórico, garantindo um array para cada tipo de ALL_KINDS. |
+| 1815 | `saveHistory(h)` | função | Grava o histórico. |
+| 1818 | `addRecord(kind, rec)` | função | Acrescenta um registro (com ts), limita a 200 por tipo e grava. |
+| 1829 | `discardRecord(kind, ts)` | função | Permite descartar um resultado já salvo (ex.: sessão interrompida por alguém, tempo/acerto não representativo) sem precisar apagar todo o histórico daquele exercício. |
+| 1836 | `medalFor(elapsedMs, thresholds)` | função | Medalha pelo tempo: ouro/prata/bronze/null conforme limites. |
+| 1842 | `MEDAL_LABEL` | constante | Rótulos das medalhas. |
+| 1843 | `MEDAL_COLORVAR` | constante | Variável CSS de cor de cada medalha. |
+| 1844 | `DIFFS_LABEL` | constante | Rótulos Fácil/Médio/Difícil. |
+| 1850 | `calcLeaderboards()` | função | Ranking interno do Cálculo Mental: como o total de contas por sessão agora varia (30 a 200), um "tempo total" só é comparável dentro da mesma quantidade — por isso o critério principal é sempre a quantidade de contas res |
 
-## Calc (linha 2131)
+## Icons (linha 1864)
 
 | Linha | Nome | Tipo | Descrição |
 |---|---|---|---|
-| 2142 | `CALC_HARD_SHARE` | constante | Proporção de contas difíceis no Cálculo (0,65). |
-| 2143 | `randIn(lo, hi)` | função | Inteiro aleatório entre lo e hi (inclusive). |
-| 2144 | `makeCalcQuestion(op, hard)` | função | Gera uma conta (+, −, ×) fácil ou difícil. |
-| 2162 | `buildCalcQuestions(total)` | função | Gera a sessão do Cálculo com filtros anti-repetição. |
-| 2182 | `CALC_TOTALS` | constante | Quantidades de contas do Cálculo. |
-| 2183 | `renderCalc(root)` | função | Tela do Cálculo Mental (digitar ou voz). **Internas:** showIntro (2211), start (2277), restart (2299), giveUp (2303), tick (2305), renderUpcoming (2307), renderLedger (2329), logAnswer (2356), updateLiveWrong (2374), numpadDigit (2381), numpadBackspace (2388), renderQuestionType (2406), submitTyped (2481), advance (2494), renderQuestionVoice (2502), **startCalcVoice** 🎙 (2525), **skipVoiceQuestion** 🎙 (2591), stopVoice (2598), finish (2604) |
+| 1865 | `ICONS` | constante | SVGs inline de exercícios, categorias de dicas e passatempos. |
+| 1893 | `homeBtn(view)` | função | Botão padrão das telas de configuração: volta para o início (ou para os passatempos) sem começar. |
 
-## Stroop (linha 2647)
+## Router (linha 1898)
 
 | Linha | Nome | Tipo | Descrição |
 |---|---|---|---|
-| 2648 | `STROOP_COUNTS` | constante | Quantidades de palavras do Stroop. |
-| 2650 | `genStroopGrid(n)` | função | Gera as palavras coloridas do Stroop (~20% congruentes). |
-| 2665 | `renderStroop(root)` | função | Tela do Desafio das Cores (Stroop). **Internas:** showIntro (2681), start (2724), restart (2756), giveUp (2759), tick (2761), **startVoiceSequence** 🎙 (2776), stopVoiceSeq (2849), finish (2854) |
+| 1901 | `setView(name, opts)` | função | Roteador: limpa a tela atual, marca a aba e chama o render da view. |
 
-## Memorization (linha 2888)
+## Home (linha 1937)
 
 | Linha | Nome | Tipo | Descrição |
 |---|---|---|---|
-| 2889 | `renderMemo(root)` | função | Tela da Memorização de Palavras. **Internas:** clearPanelChildren (2901), showIntro (2905), start (2938), recallStage (2967), finish (3008) |
+| 1943 | `EXERCISES` | constante | Cadastro dos 14 exercícios da trilha (key, title, desc, icon, view, unlockAt). |
+| 1959 | `ALL_KINDS` | constante | Todos os tipos de histórico (trilha + concursos + passatempos). |
+| 1961 | `TRAIL_KINDS` | constante | Sessões que contam para a trilha de desbloqueio: tudo, menos os passatempos. |
+| 1964 | `UNLOCK_EARNED_KEY` | constante | Exercício que já foi liberado uma vez nunca volta a ficar bloqueado (ex.: quem liberou coisas quando o Sudoku ainda contava para a trilha continua com elas abertas). |
+| 1965 | `loadEarnedUnlocked()` | função | Lê cronofoco_unlock_earned_v1. |
+| 1966 | `saveEarnedUnlocked(keys)` | função | Grava cronofoco_unlock_earned_v1. |
+| 1970 | `UNLOCK_SEEN_KEY` | constante | Chave dos exercícios que a pessoa já viu liberados (aviso de novo exercício). |
+| 1971 | `loadSeenUnlocked()` | função | Lê cronofoco_unlock_seen_v1. |
+| 1977 | `saveSeenUnlocked(keys)` | função | Grava cronofoco_unlock_seen_v1. |
+| 1981 | `lastRecordChip(kind)` | função | Resumo de uma linha da última sessão de um tipo (card do Início e dos Passatempos). |
+| 2029 | `computeStreak()` | função | Dias seguidos, até hoje, com pelo menos uma sessão. |
+| 2047 | `renderHome(root)` | função | Tela Início: números, aviso de desbloqueio, painel de próximo desbloqueio, cards. **Internas:** isUnlocked (2058) |
 
-## Sudoku (linha 3040)
-
-| Linha | Nome | Tipo | Descrição |
-|---|---|---|---|
-| 3041 | `emptyBoard()` | função | Grade 9×9 zerada. |
-| 3042 | `validPlacement(board, r, c, v)` | função | O número pode ir nesta casa (linha, coluna e quadrado)? |
-| 3048 | `solveFill(board)` | função | Preenche uma grade completa por backtracking. |
-| 3067 | `generateSudoku(clueCount)` | função | Gera {puzzle, solution} apagando casas até sobrar a quantidade de pistas. |
-| 3080 | `DIFFICULTIES` | constante | Pistas do Sudoku por nível (42/33/26). |
-| 3089 | `renderSudoku(root)` | função | Tela do Sudoku com anotações, teclado na tela e atalhos. **Internas:** addPadBtn (3117), tick (3140), setNotesMode (3142), newGame (3149), isClue (3167), buildBoard (3169), select (3185), conflictsMap (3191), render (3212), inputDigit (3245), eraseCell (3269), checkComplete (3277), clearInputs (3284), showSolution (3293), finish (3322) |
-
-## Sequência de números (span de dígitos) (linha 3348)
-
-| Linha | Nome | Tipo | Descrição |
-|---|---|---|---|
-| 3349 | `ATTEMPT_OPTIONS` | constante | Tentativas por tamanho na Sequência de Números. |
-| 3351 | `SPAN_GOALS` | constante | Meta de dígitos: a pessoa escolhe até onde quer chegar (0 = sem limite, vai até errar). |
-| 3353 | `SPAN_SPEEDS` | constante | Quanto tempo cada número fica na tela (em ms). |
-| 3354 | `renderDigitSpan(root)` | função | Tela da Sequência de Números. **Internas:** showIntro (3380), start (3434), dropSpanKeys (3444), restart (3445), giveUp (3448), tick (3450), clearRevealTimer (3452), nextRound (3454), finish (3540) |
-
-## Jogo da memória (pares) (linha 3565)
+## Calc (linha 2159)
 
 | Linha | Nome | Tipo | Descrição |
 |---|---|---|---|
-| 3566 | `PAIR_EMOJI` | constante | Emojis das cartas do Jogo da Memória. |
-| 3567 | `PAIR_COUNTS` | constante | Quantidades de pares. |
-| 3570 | `pairsColumns(totalCards)` | função | Garante ao menos 3 linhas de cartas na grade (em vez de deixar o navegador esticar tudo numa linha só quando há muitos pares), sem deixar as colunas largas demais. |
-| 3575 | `renderPairs(root)` | função | Tela do Jogo da Memória. **Internas:** showIntro (3598), start (3617), restart (3628), giveUp (3631), tick (3633), renderBoard (3635), flip (3649), finish (3674) |
+| 2170 | `CALC_HARD_SHARE` | constante | Proporção de contas difíceis no Cálculo (0,65). |
+| 2171 | `randIn(lo, hi)` | função | Inteiro aleatório entre lo e hi (inclusive). |
+| 2172 | `makeCalcQuestion(op, hard)` | função | Gera uma conta (+, −, ×) fácil ou difícil. |
+| 2190 | `buildCalcQuestions(total)` | função | Gera a sessão do Cálculo com filtros anti-repetição. |
+| 2210 | `CALC_TOTALS` | constante | Quantidades de contas do Cálculo. |
+| 2211 | `renderCalc(root)` | função | Tela do Cálculo Mental (digitar ou voz). **Internas:** showIntro (2239), start (2305), restart (2327), giveUp (2331), tick (2333), renderUpcoming (2335), renderLedger (2357), logAnswer (2384), updateLiveWrong (2402), numpadDigit (2409), numpadBackspace (2416), renderQuestionType (2434), submitTyped (2509), advance (2522), renderQuestionVoice (2530), startCalcVoice (2553), skipVoiceQuestion (2619), stopVoice (2626), finish (2632) |
 
-## Flashcards (linha 3696)
-
-| Linha | Nome | Tipo | Descrição |
-|---|---|---|---|
-| 3702 | `FLASHCARD_GROUPS` | constante | Classes dos baralhos (Idiomas, Língua Portuguesa, Conhecimentos Gerais, Exatas e Lógica, Concursos). |
-| 3709 | `tabuadaCards()` | função | Gera os cartões da Tabuada Difícil (6–9 × 3–9). |
-| 3714 | `FLASHCARD_DECKS` | constante | 18 baralhos: {group, label, swap?, cards[{f, b}]}. |
-| 4091 | `FLASH_SEEN_KEY` | constante | Histórico de cartões já vistos (por baralho), para o sorteio priorizar os que faz mais tempo que a pessoa não vê. |
-| 4092 | `loadFlashSeen()` | função | Lê cronofoco_flash_seen_v1. |
-| 4093 | `markFlashSeen(deckKey, card)` | função | Marca um cartão como visto agora. |
-| 4101 | `pickFlashCards(deckKey, n)` | função | Sorteia n cartões priorizando os não vistos há mais tempo. |
-| 4107 | `FLASH_COUNTS` | constante | Quantidades de cartões (0 = todos). |
-| 4109 | `renderFlashcards(root)` | função | Tela dos Flashcards. **Internas:** clearPanelChildren (4118), deck (4119), frontOf (4120), backOf (4121), showIntro (4125), start (4178), progressEl (4186), sessionButtons (4189), showCard (4196), reveal (4209), rate (4238), finish (4246) |
-
-## Leitura e compreensão (linha 4267)
+## Stroop (linha 2675)
 
 | Linha | Nome | Tipo | Descrição |
 |---|---|---|---|
-| 4268 | `renderReading(root)` | função | Tela da Leitura e Compreensão. **Internas:** showIntro (4289), start (4309), restart (4324), giveUp (4327), tick (4329), showPassage (4331), showQuestions (4342), finish (4378) |
+| 2676 | `STROOP_COUNTS` | constante | Quantidades de palavras do Stroop. |
+| 2678 | `genStroopGrid(n)` | função | Gera as palavras coloridas do Stroop (~20% congruentes). |
+| 2693 | `renderStroop(root)` | função | Tela do Desafio das Cores (Stroop). **Internas:** showIntro (2709), start (2752), restart (2784), giveUp (2787), tick (2789), startVoiceSequence (2804), stopVoiceSeq (2877), finish (2882) |
 
-## Fluência verbal (linha 4415)
-
-| Linha | Nome | Tipo | Descrição |
-|---|---|---|---|
-| 4416 | `renderFluency(root)` | função | Tela da Fluência Verbal. **Internas:** showIntro (4430), start (4447), giveUp (4485), addWord (4487), finish (4498) |
-
-## Cálculo em cadeia (linha 4524)
+## Memorization (linha 2916)
 
 | Linha | Nome | Tipo | Descrição |
 |---|---|---|---|
-| 4525 | `renderChainCalc(root)` | função | Tela do Cálculo em Cadeia. **Internas:** showIntro (4553), genChain (4595), start (4621), restart (4631), giveUp (4634), tick (4636), clearRevealTimer (4638), nextRound (4640), finish (4693) |
+| 2917 | `renderMemo(root)` | função | Tela da Memorização de Palavras. **Internas:** clearPanelChildren (2929), showIntro (2933), start (2966), recallStage (2995), finish (3036) |
 
-## N-back (linha 4716)
-
-| Linha | Nome | Tipo | Descrição |
-|---|---|---|---|
-| 4717 | `renderNBack(root)` | função | Tela do N-Back. **Internas:** showIntro (4746), genSequence (4779), start (4793), restart (4817), giveUp (4825), tick (4832), clearTimers (4834), handlePress (4839), showTrial (4844), evaluateTrial (4861), finish (4870) |
-
-## Recall tardio (linha 4900)
+## Sudoku (linha 3068)
 
 | Linha | Nome | Tipo | Descrição |
 |---|---|---|---|
-| 4901 | `renderRecall(root)` | função | Tela do Recall Tardio. **Internas:** clearPanelChildren (4915), showIntro (4919), start (4946), distractorStage (4969), recallStage (4998), giveUp (5039), finish (5041) |
+| 3069 | `emptyBoard()` | função | Grade 9×9 zerada. |
+| 3070 | `validPlacement(board, r, c, v)` | função | O número pode ir nesta casa (linha, coluna e quadrado)? |
+| 3076 | `solveFill(board)` | função | Preenche uma grade completa por backtracking. |
+| 3095 | `generateSudoku(clueCount)` | função | Gera {puzzle, solution} apagando casas até sobrar a quantidade de pistas. |
+| 3108 | `DIFFICULTIES` | constante | Pistas do Sudoku por nível (42/33/26). |
+| 3117 | `renderSudoku(root)` | função | Tela do Sudoku com anotações, teclado na tela e atalhos. **Internas:** addPadBtn (3145), tick (3168), setNotesMode (3170), newGame (3177), isClue (3195), buildBoard (3197), select (3213), conflictsMap (3219), render (3240), inputDigit (3273), eraseCell (3297), checkComplete (3305), clearInputs (3312), showSolution (3321), finish (3350) |
 
-## Percepção de tempo (linha 5074)
-
-| Linha | Nome | Tipo | Descrição |
-|---|---|---|---|
-| 5078 | `renderTimePerception(root)` | função | Tela da Percepção de Tempo. **Internas:** showIntro (5093), start (5110), nextRound (5115), runRound (5128), markNow (5144), finish (5160) |
-
-## Busca de símbolos (linha 5180)
-
-| Linha | Nome | Tipo | Descrição |
-|---|---|---|---|
-| 5184 | `renderSymbolSearch(root)` | função | Tela da Busca de Símbolos. **Internas:** showIntro (5218), start (5236), nextRound (5243), giveUp (5280), onCellClick (5282), finish (5303) |
-
-## Chute calibrado (linha 5324)
+## Sequência de números (span de dígitos) (linha 3376)
 
 | Linha | Nome | Tipo | Descrição |
 |---|---|---|---|
-| 5329 | `CALIBRATION_QUESTIONS` | constante | 12 perguntas numéricas do Chute Calibrado. |
-| 5343 | `renderCalibration(root)` | função | Tela do Chute Calibrado. **Internas:** showIntro (5358), start (5375), nextQuestion (5382), showFeedback (5414), finish (5428) |
+| 3377 | `ATTEMPT_OPTIONS` | constante | Tentativas por tamanho na Sequência de Números. |
+| 3379 | `SPAN_GOALS` | constante | Meta de dígitos: a pessoa escolhe até onde quer chegar (0 = sem limite, vai até errar). |
+| 3381 | `SPAN_SPEEDS` | constante | Quanto tempo cada número fica na tela (em ms). |
+| 3382 | `renderDigitSpan(root)` | função | Tela da Sequência de Números. **Internas:** showIntro (3408), start (3462), dropSpanKeys (3472), restart (3473), giveUp (3476), tick (3478), clearRevealTimer (3480), nextRound (3482), finish (3568) |
 
-## Dicas (hábitos de estilo de vida) (linha 5456)
-
-| Linha | Nome | Tipo | Descrição |
-|---|---|---|---|
-| 5457 | `TIPS` | constante | Conteúdo da seção Dicas (sections ou subtabs). |
-| 5607 | `TIPS_ORDER` | constante | Ordem das categorias de Dicas. |
-
-## Ilustrações da seção dicas (linha 5609)
+## Jogo da memória (pares) (linha 3593)
 
 | Linha | Nome | Tipo | Descrição |
 |---|---|---|---|
-| 5614 | `TIP_ILLUSTRATIONS` | constante | Ilustrações SVG das Dicas. |
-| 5708 | `renderTipItems(container, items)` | função | Desenha itens de dica (título, explicação, benefício). |
-| 5716 | `renderTipSections(container, sections)` | função | Desenha as seções de uma categoria de dica. |
-| 5723 | `renderTips(root, categoryKey, subtabKey)` | função | Tela Dicas: grade de categorias ou uma categoria aberta. |
+| 3594 | `PAIR_EMOJI` | constante | Emojis das cartas do Jogo da Memória. |
+| 3595 | `PAIR_COUNTS` | constante | Quantidades de pares. |
+| 3598 | `pairsColumns(totalCards)` | função | Garante ao menos 3 linhas de cartas na grade (em vez de deixar o navegador esticar tudo numa linha só quando há muitos pares), sem deixar as colunas largas demais. |
+| 3603 | `renderPairs(root)` | função | Tela do Jogo da Memória. **Internas:** showIntro (3626), start (3645), restart (3656), giveUp (3659), tick (3661), renderBoard (3663), flip (3677), finish (3702) |
 
-## Concursos (raciocínio lógico) (linha 5773)
-
-| Linha | Nome | Tipo | Descrição |
-|---|---|---|---|
-| 5781 | `CONCURSO_CATEGORIES` | constante | Categorias de concursos: {label, icon, desc, questions}. |
-| 5882 | `CONCURSO_ORDER` | constante | Ordem das categorias (reatribuída depois de CONCURSO_EXTRA). |
-| 5885 | `CONCURSO_EXTRA` | constante | Questões acrescentadas na v41, concatenadas às categorias; cria Porcentagem e Associação. |
-| 6086 | `CONCURSO_OK_KEY` | constante | Guarda (só neste aparelho) quais questões a pessoa já acertou, para ela poder escolher treinar só as que ainda não acertou. |
-| 6087 | `loadConcursoOk()` | função | Lê cronofoco_concursos_ok_v1. |
-| 6088 | `saveConcursoOk(m)` | função | Grava cronofoco_concursos_ok_v1. |
-| 6089 | `concursoQid(catKey, q)` | função | Identidade de uma questão: categoria|enunciado. |
-| 6091 | `concursoPool(key)` | função | Todas as questões de uma categoria (ou de todas, no "misto"), cada uma com a categoria de origem. |
-| 6097 | `CONCURSO_COUNTS` | constante | Quantidades de questões (0 = todas). |
-| 6099 | `renderConcursos(root)` | função | Tela Concursos: grade → configuração → questões → resultado. **Internas:** catLabel (6103), showCategoryGrid (6105), showSetup (6131), startQuiz (6178) |
-
-## Passatempos (linha 6264)
+## Flashcards (linha 3724)
 
 | Linha | Nome | Tipo | Descrição |
 |---|---|---|---|
-| 6270 | `PASTIMES` | constante | Cadastro dos 4 passatempos. |
-| 6276 | `PASTIME_KINDS` | constante | Chaves dos passatempos (derivado de PASTIMES). |
-| 6278 | `renderPastimes(root)` | função | Tela Passatempos (cards). |
-| 6301 | `pastimeWordPool(category, minLen, maxLen)` | função | Palavras de uma categoria prontas para jogo: só palavras simples (sem espaço/hífen), em maiúsculas e sem acento (como nas revistas), mantendo a grafia original para exibir na lista. |
-| 6311 | `pastimeCategories(minLen, maxLen, need)` | função | Categorias com palavras suficientes no tamanho pedido. |
-| 6314 | `themePicker(cats, current, onPick)` | função | <select> de tema (aleatório + categorias). |
+| 3730 | `FLASHCARD_GROUPS` | constante | Classes dos baralhos (Idiomas, Língua Portuguesa, Conhecimentos Gerais, Exatas e Lógica, Concursos). |
+| 3737 | `tabuadaCards()` | função | Gera os cartões da Tabuada Difícil (6–9 × 3–9). |
+| 3742 | `FLASHCARD_DECKS` | constante | 18 baralhos: {group, label, swap?, cards[{f, b}]}. |
+| 4119 | `FLASH_SEEN_KEY` | constante | Histórico de cartões já vistos (por baralho), para o sorteio priorizar os que faz mais tempo que a pessoa não vê. |
+| 4120 | `loadFlashSeen()` | função | Lê cronofoco_flash_seen_v1. |
+| 4121 | `markFlashSeen(deckKey, card)` | função | Marca um cartão como visto agora. |
+| 4129 | `pickFlashCards(deckKey, n)` | função | Sorteia n cartões priorizando os não vistos há mais tempo. |
+| 4135 | `FLASH_COUNTS` | constante | Quantidades de cartões (0 = todos). |
+| 4137 | `renderFlashcards(root)` | função | Tela dos Flashcards. **Internas:** clearPanelChildren (4146), deck (4147), frontOf (4148), backOf (4149), showIntro (4153), start (4206), progressEl (4214), sessionButtons (4217), showCard (4224), reveal (4237), rate (4266), finish (4274) |
 
-## Caça-palavras (linha 6322)
-
-| Linha | Nome | Tipo | Descrição |
-|---|---|---|---|
-| 6323 | `WS_DIFFS` | constante | Níveis do Caça-palavras (tamanho e nº de palavras). |
-| 6329 | `WS_FILL` | constante | Letras de preenchimento com frequência parecida com a do português (grade com "cara" de revista). |
-| 6331 | `genWordSearch(size, count, dirs, pool)` | função | Gera a grade do Caça-palavras (melhor de 40 tentativas). |
-| 6367 | `WS_DIR_STRAIGHT` | constante | Direções → e ↓ (WS_DIR_DIAG, WS_DIR_BACK e WS_DIR_BACKDIAG logo abaixo). |
-| 6368 | `wsDirs(diag, back)` | função | Monta a lista de direções conforme as opções diagonal / de trás pra frente. |
-| 6375 | `renderWordSearch(root)` | função | Tela do Caça-palavras. **Internas:** showIntro (6386), start (6415), cellAt (6452), lineCells (6459), paintSel (6473), bindGrid (6477), tryCells (6506), sameCells (6518), markFound (6523), reveal (6532), finish (6539) |
-
-## Palavra embaralhada (linha 6561)
+## Leitura e compreensão (linha 4295)
 
 | Linha | Nome | Tipo | Descrição |
 |---|---|---|---|
-| 6562 | `scrambleWord(w)` | função | Embaralha as letras garantindo resultado diferente da palavra. |
-| 6570 | `sortedLetters(w)` | função | Letras em ordem alfabética (para aceitar anagramas). |
-| 6572 | `renderScramble(root)` | função | Tela da Palavra Embaralhada. **Internas:** showIntro (6584), start (6602), showWord (6614), next (6670), finish (6676) |
+| 4296 | `renderReading(root)` | função | Tela da Leitura e Compreensão. **Internas:** showIntro (4317), start (4337), restart (4352), giveUp (4355), tick (4357), showPassage (4359), showQuestions (4370), finish (4406) |
 
-## Palavras cruzadas (linha 6698)
+## Fluência verbal (linha 4443)
 
 | Linha | Nome | Tipo | Descrição |
 |---|---|---|---|
-| 6702 | `CROSS_BANK` | constante | 189 palavras com dica da cruzadinha (normalizadas). |
-| 6769 | `CW_DIFFS` | constante | Níveis da cruzadinha (palavras, grade máxima, palavra mais longa). |
-| 6775 | `genCrossword(D)` | função | Gera a cruzadinha: posições, numeração e solução. |
-| 6865 | `renderCrossword(root)` | função | Tela das Palavras Cruzadas. **Internas:** showIntro (6876), start (6892), wordAt (6951), select (6954), paint (6960), move (6972), bindInput (6978), checkSolved (7010), checkAll (7016), revealLetter (7026), revealWord (7032), finish (7041) |
+| 4444 | `renderFluency(root)` | função | Tela da Fluência Verbal. **Internas:** showIntro (4458), start (4475), giveUp (4513), addWord (4515), finish (4526) |
 
-## Result screen (linha 7070)
+## Cálculo em cadeia (linha 4552)
 
 | Linha | Nome | Tipo | Descrição |
 |---|---|---|---|
-| 7071 | `showResult(panel, opts)` | função | Tela padrão de resultado (ver 10-resultado-e-historico.md). |
+| 4553 | `renderChainCalc(root)` | função | Tela do Cálculo em Cadeia. **Internas:** showIntro (4581), genChain (4623), start (4649), restart (4659), giveUp (4662), tick (4664), clearRevealTimer (4666), nextRound (4668), finish (4721) |
 
-## History (linha 7118)
+## N-back (linha 4744)
 
 | Linha | Nome | Tipo | Descrição |
 |---|---|---|---|
-| 7119 | `sparkline(values, w, h)` | função | Minigráfico SVG de uma série. |
-| 7147 | `renderHistory(root)` | função | Tela Histórico. **Internas:** confirmClickButton (7152), section (7175), leaderboardSection (7224) |
+| 4745 | `renderNBack(root)` | função | Tela do N-Back. **Internas:** showIntro (4774), genSequence (4807), start (4821), restart (4845), giveUp (4853), tick (4860), clearTimers (4862), handlePress (4867), showTrial (4872), evaluateTrial (4889), finish (4898) |
 
+## Recall tardio (linha 4928)
+
+| Linha | Nome | Tipo | Descrição |
+|---|---|---|---|
+| 4929 | `renderRecall(root)` | função | Tela do Recall Tardio. **Internas:** clearPanelChildren (4943), showIntro (4947), start (4974), distractorStage (4997), recallStage (5026), giveUp (5067), finish (5069) |
+
+## Percepção de tempo (linha 5102)
+
+| Linha | Nome | Tipo | Descrição |
+|---|---|---|---|
+| 5106 | `renderTimePerception(root)` | função | Tela da Percepção de Tempo. **Internas:** showIntro (5121), start (5138), nextRound (5143), runRound (5156), markNow (5172), finish (5188) |
+
+## Busca de símbolos (linha 5208)
+
+| Linha | Nome | Tipo | Descrição |
+|---|---|---|---|
+| 5212 | `renderSymbolSearch(root)` | função | Tela da Busca de Símbolos. **Internas:** showIntro (5246), start (5264), nextRound (5271), giveUp (5308), onCellClick (5310), finish (5331) |
+
+## Chute calibrado (linha 5352)
+
+| Linha | Nome | Tipo | Descrição |
+|---|---|---|---|
+| 5357 | `CALIBRATION_QUESTIONS` | constante | 12 perguntas numéricas do Chute Calibrado. |
+| 5371 | `renderCalibration(root)` | função | Tela do Chute Calibrado. **Internas:** showIntro (5386), start (5403), nextQuestion (5410), showFeedback (5442), finish (5456) |
+
+## Dicas (hábitos de estilo de vida) (linha 5484)
+
+| Linha | Nome | Tipo | Descrição |
+|---|---|---|---|
+| 5485 | `TIPS` | constante | Conteúdo da seção Dicas (sections ou subtabs). |
+| 5635 | `TIPS_ORDER` | constante | Ordem das categorias de Dicas. |
+
+## Ilustrações da seção dicas (linha 5637)
+
+| Linha | Nome | Tipo | Descrição |
+|---|---|---|---|
+| 5642 | `TIP_ILLUSTRATIONS` | constante | Ilustrações SVG das Dicas. |
+| 5736 | `renderTipItems(container, items)` | função | Desenha itens de dica (título, explicação, benefício). |
+| 5744 | `renderTipSections(container, sections)` | função | Desenha as seções de uma categoria de dica. |
+| 5751 | `renderTips(root, categoryKey, subtabKey)` | função | Tela Dicas: grade de categorias ou uma categoria aberta. |
+
+## Concursos (raciocínio lógico) (linha 5801)
+
+| Linha | Nome | Tipo | Descrição |
+|---|---|---|---|
+| 5809 | `CONCURSO_CATEGORIES` | constante | Categorias de concursos: {label, icon, desc, questions}. |
+| 5910 | `CONCURSO_ORDER` | constante | Ordem das categorias (reatribuída depois de CONCURSO_EXTRA). |
+| 5913 | `CONCURSO_EXTRA` | constante | Questões acrescentadas na v41, concatenadas às categorias; cria Porcentagem e Associação. |
+| 6114 | `CONCURSO_OK_KEY` | constante | Guarda (só neste aparelho) quais questões a pessoa já acertou, para ela poder escolher treinar só as que ainda não acertou. |
+| 6115 | `loadConcursoOk()` | função | Lê cronofoco_concursos_ok_v1. |
+| 6116 | `saveConcursoOk(m)` | função | Grava cronofoco_concursos_ok_v1. |
+| 6117 | `concursoQid(catKey, q)` | função | Identidade de uma questão: categoria\\|enunciado. |
+| 6119 | `concursoPool(key)` | função | Todas as questões de uma categoria (ou de todas, no "misto"), cada uma com a categoria de origem. |
+| 6125 | `CONCURSO_COUNTS` | constante | Quantidades de questões (0 = todas). |
+| 6127 | `renderConcursos(root)` | função | Tela Concursos: grade → configuração → questões → resultado. **Internas:** catLabel (6131), showCategoryGrid (6133), showSetup (6159), startQuiz (6206) |
+
+## Passatempos (linha 6292)
+
+| Linha | Nome | Tipo | Descrição |
+|---|---|---|---|
+| 6298 | `PASTIMES` | constante | Cadastro dos 4 passatempos. |
+| 6304 | `PASTIME_KINDS` | constante | Chaves dos passatempos (derivado de PASTIMES). |
+| 6306 | `renderPastimes(root)` | função | Tela Passatempos (cards). |
+| 6329 | `pastimeWordPool(category, minLen, maxLen)` | função | Palavras de uma categoria prontas para jogo: só palavras simples (sem espaço/hífen), em maiúsculas e sem acento (como nas revistas), mantendo a grafia original para exibir na lista. |
+| 6339 | `pastimeCategories(minLen, maxLen, need)` | função | Categorias com palavras suficientes no tamanho pedido. |
+| 6342 | `themePicker(cats, current, onPick)` | função | <select> de tema (aleatório + categorias). |
+| 6351 | `WS_DIFFS` | constante | Níveis do Caça-palavras (tamanho e nº de palavras). |
+| 6357 | `WS_FILL` | constante | Letras de preenchimento com frequência parecida com a do português (grade com "cara" de revista). |
+| 6359 | `genWordSearch(size, count, dirs, pool)` | função | Gera a grade do Caça-palavras (melhor de 40 tentativas). |
+| 6395 | `WS_DIR_STRAIGHT` | constante | Direções → e ↓ (WS_DIR_DIAG, WS_DIR_BACK e WS_DIR_BACKDIAG logo abaixo). |
+| 6396 | `wsDirs(diag, back)` | função | Monta a lista de direções conforme as opções diagonal / de trás pra frente. |
+| 6403 | `renderWordSearch(root)` | função | Tela do Caça-palavras. **Internas:** showIntro (6414), start (6443), cellAt (6480), lineCells (6487), paintSel (6501), bindGrid (6505), tryCells (6534), sameCells (6546), markFound (6551), reveal (6560), finish (6567) |
+| 6590 | `scrambleWord(w)` | função | Embaralha as letras garantindo resultado diferente da palavra. |
+| 6598 | `sortedLetters(w)` | função | Letras em ordem alfabética (para aceitar anagramas). |
+| 6600 | `renderScramble(root)` | função | Tela da Palavra Embaralhada. **Internas:** showIntro (6612), start (6630), showWord (6642), next (6698), finish (6704) |
+| 6730 | `CROSS_BANK` | constante | 189 palavras com dica da cruzadinha (normalizadas). |
+| 6797 | `CW_DIFFS` | constante | Níveis da cruzadinha (palavras, grade máxima, palavra mais longa). |
+| 6803 | `genCrossword(D)` | função | Gera a cruzadinha: posições, numeração e solução. |
+| 6893 | `renderCrossword(root)` | função | Tela das Palavras Cruzadas. **Internas:** showIntro (6904), start (6920), wordAt (6979), select (6982), paint (6988), move (7000), bindInput (7006), checkSolved (7038), checkAll (7044), revealLetter (7054), revealWord (7060), finish (7069) |
+
+## Result screen (linha 7098)
+
+| Linha | Nome | Tipo | Descrição |
+|---|---|---|---|
+| 7099 | `showResult(panel, opts)` | função | Tela padrão de resultado (ver 10-resultado-e-historico.md). |
+
+## History (linha 7146)
+
+| Linha | Nome | Tipo | Descrição |
+|---|---|---|---|
+| 7147 | `sparkline(values, w, h)` | função | Minigráfico SVG de uma série. |
+| 7175 | `renderHistory(root)` | função | Tela Histórico. **Internas:** confirmClickButton (7180), section (7203), leaderboardSection (7252) |

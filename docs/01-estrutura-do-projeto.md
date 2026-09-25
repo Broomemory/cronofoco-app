@@ -5,7 +5,7 @@
 ```
 cronofoco-app/
 ├── www/
-│   └── index.html                  ← O SISTEMA (site v41 + voz nativa). Único arquivo da interface.
+│   └── index.html                  ← O SISTEMA: cópia idêntica do cronofoco.html do site (v42). Único arquivo da interface.
 ├── android/                        ← Projeto Android nativo gerado pelo Capacitor
 │   ├── app/
 │   │   ├── build.gradle            ← versionCode/versionName, assinatura de debug
@@ -44,7 +44,7 @@ Nunca edite a cópia em `assets/public/`: ela é sobrescrita a cada `cap sync`.
 | Arquivo | Valor | Observação |
 |---|---|---|
 | `capacitor.config.json` | `appId: com.cronofoco.app`, `appName: Cronofoco`, `webDir: www` | O `appId` é provisório: definir o definitivo antes da Play Store (não dá para trocar depois de publicado) |
-| `android/app/build.gradle` | `versionCode 3`, `versionName "1.2"` | Subir `versionCode` a cada APK distribuído |
+| `android/app/build.gradle` | `versionCode 4`, `versionName "1.3"` | Subir `versionCode` a cada APK distribuído |
 | `android/variables.gradle` | `minSdkVersion 24`, `compileSdkVersion 36`, `targetSdkVersion 36` | |
 | `package.json` | `@capacitor/android`, `@capacitor/cli`, `@capacitor/core` ^8.5.2; `@capacitor-community/speech-recognition` ^7.0.1 | |
 
@@ -71,3 +71,6 @@ e implemente o pedido de permissão no `CronoVoicePlugin` (anotação `@Capacito
 No site publicado (página do Claude, dentro de iframe) o navegador bloqueia o microfone, e a Web
 Speech API também não existe dentro do WebView do Android. O app resolve as duas coisas: roda o
 mesmo sistema fora de iframe e troca a voz do navegador pelo reconhecedor nativo do Android.
+Se o site for hospedado de verdade (HTTPS, fora de iframe), a voz também funciona no Chrome/Edge do
+computador e no Chrome do Android / Safari do iPhone — com o mesmo código de voz, porque desde a
+1.3 / v42 o `www/index.html` e o `cronofoco.html` são o mesmo arquivo.

@@ -45,8 +45,8 @@ Incluir `[skip ci]` na mensagem do commit (o GitHub Actions ignora o push).
 Em `android/app/build.gradle`:
 
 ```gradle
-versionCode 3        // inteiro; o Android só aceita atualizar se for maior que o instalado
-versionName "1.2"    // texto exibido ao usuário
+versionCode 4        // inteiro; o Android só aceita atualizar se for maior que o instalado
+versionName "1.3"    // texto exibido ao usuário
 ```
 
 Histórico em [CHANGELOG.md](CHANGELOG.md).

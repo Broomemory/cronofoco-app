@@ -1,5 +1,11 @@
 #!/usr/bin/env bash
-# Leva uma versão nova do site (cronofoco.html) para o app (www/index.html) sem perder a camada de voz.
+# Leva uma versão nova do site (cronofoco.html) para o app (www/index.html).
+#
+# Desde o site v42 / app 1.3 os dois arquivos são IDÊNTICOS (a voz do app foi incorporada ao site).
+# Então, no caso normal, sincronizar = copiar o cronofoco.html para www/index.html — o script faz isso
+# (caminho rápido) quando www/index.html ainda é igual à base (a versão do site da última
+# sincronização). Só se alguém tiver mexido em www/index.html diretamente é que ele faz a fusão de
+# três vias descrita abaixo, para não perder essa mudança — e avisa que ela precisa ir para o site.
 #
 # Uso (na raiz do repositório, no Linux/macOS ou no "Git Bash" do Windows):
 #   docs/sincronizacao/sincronizar.sh /caminho/do/cronofoco.html 42
@@ -33,7 +39,12 @@ echo "App:   www/index.html"
 echo "Novo:  $NOVO (site v$VER)"
 
 TMP="$(mktemp)"
-if [ "$CONCLUIR" -eq 1 ]; then
+if [ "$CONCLUIR" -eq 0 ] && cmp -s "$APP" "$BASE"; then
+  # Caminho rápido: o app não tem nada próprio → é só copiar o site.
+  echo "www/index.html é igual à base: cópia direta do site (sem fusão)."
+  cp "$NOVO" "$TMP"
+  CONFLITOS=0
+elif [ "$CONCLUIR" -eq 1 ]; then
   [ -f "$APP.merge" ] || { echo "Não existe www/index.html.merge para concluir." >&2; exit 1; }
   if grep -qE '^(<<<<<<<|\|\|\|\|\|\|\||=======|>>>>>>>)( |$)' "$APP.merge"; then
     echo "Ainda há marcadores de conflito em www/index.html.merge." >&2; exit 2
@@ -41,6 +52,7 @@ if [ "$CONCLUIR" -eq 1 ]; then
   cp "$APP.merge" "$TMP"; rm -f "$APP.merge"
   CONFLITOS=0
 else
+echo "⚠ www/index.html tem mudanças que não estão na base do site — fazendo fusão de três vias."
 set +e
 git merge-file -p --diff3 -L "app (www/index.html)" -L "base ($(basename "$BASE"))" -L "site v$VER" \
   "$APP" "$BASE" "$NOVO" > "$TMP"
@@ -63,9 +75,17 @@ NOVA_BASE="$DIR/base-site-v$VER.html"
 if [ "$BASE" != "$NOVA_BASE" ]; then rm -f "$BASE"; fi
 cp "$NOVO" "$NOVA_BASE"
 rm -f "$DIR"/diferencas-site-v*-para-app*.diff
-diff -u --label "site v$VER (cronofoco.html)" --label "app (www/index.html)" "$NOVA_BASE" "$APP" \
-  > "$DIR/diferencas-site-v$VER-para-app.diff" || true
-echo ""
-echo "✔ Sem conflitos. www/index.html atualizado; base agora é base-site-v$VER.html."
+DIFF="$DIR/diferencas-site-v$VER-para-app.diff"
+if cmp -s "$NOVA_BASE" "$APP"; then
+  echo "# Sem diferenças: www/index.html do app é idêntico ao cronofoco.html do site v$VER." > "$DIFF"
+  echo ""
+  echo "✔ www/index.html atualizado e IDÊNTICO ao site v$VER; base agora é base-site-v$VER.html."
+else
+  diff -u --label "site v$VER (cronofoco.html)" --label "app (www/index.html)" "$NOVA_BASE" "$APP" > "$DIFF" || true
+  echo ""
+  echo "✔ Sem conflitos. www/index.html atualizado; base agora é base-site-v$VER.html."
+  echo "⚠ ATENÇÃO: o app ficou DIFERENTE do site (ver $(basename "$DIFF")). Leve essas mudanças para o"
+  echo "  cronofoco.html do site, para os dois voltarem a ser o mesmo arquivo."
+fi
 echo "  Próximos passos: rodar os testes (docs/08-testes.md), subir versionCode em android/app/build.gradle,"
 echo "  atualizar docs/06-diferencas-site-x-app.md e docs/CHANGELOG.md, commit e push."

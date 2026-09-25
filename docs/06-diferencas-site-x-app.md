@@ -1,11 +1,58 @@
-# 06 — Diferenças entre o site (v41) e o app (1.2)
+# 06 — Diferenças entre o site e o app
 
-Comparação entre `cronofoco.html` do site na **versão 41** (cópia em
-`sincronizacao/base-site-v41.html`) e `www/index.html` do app **1.2**. O diff completo, linha a
-linha, está em `sincronizacao/diferencas-site-v41-para-app-1.2.diff` (13 blocos: 719 linhas do app
-que não existem no site e 88 linhas do site que o app substituiu).
+## Hoje (site v42 × app 1.3): nenhuma
 
-## Resumo
+O `www/index.html` do app **1.3** é **idêntico, byte a byte,** ao `cronofoco.html` do site na
+**versão 42**:
+
+| Arquivo | Linhas | md5 |
+|---|---|---|
+| `cronofoco.html` (site v42) | 7.486 | `ed368d93407de065a58f5454e18940ab` |
+| `www/index.html` (app 1.3) | 7.486 | `ed368d93407de065a58f5454e18940ab` |
+| `assets/public/index.html` dentro do APK 1.3 | 7.486 | `ed368d93407de065a58f5454e18940ab` |
+
+O registro fica em `sincronizacao/diferencas-site-v42-para-app-1.3.diff` (só uma linha de
+comentário: "Sem diferenças"). O que ainda é exclusivo do app **não está no HTML**: o plugin Java
+`CronoVoicePlugin`, a configuração Capacitor/Android e o build ([01](01-estrutura-do-projeto.md),
+[02](02-build-e-publicacao.md), [03](03-plugin-nativo-cronovoice.md)).
+
+O mesmo arquivo se comporta de acordo com onde está rodando — isso **não é diferença de código**, é
+o mesmo código tomando um caminho ou outro:
+
+| Ponto | No app (APK) | No navegador (site) |
+|---|---|---|
+| Motor de voz (`startVoiceInput`) | plugin nativo `CronoVoice` | Web Speech API (contínua no computador; uma frase por escuta no celular) |
+| `inIframe()` / `micDeviceAvailable()` | sempre `false` / `true` | conferidos de verdade (no iframe do Claude a voz fica "(indisponível)") |
+| Mensagens de erro de voz | caminho nas configurações do Android | cadeado da barra de endereço; "use Chrome ou Edge" |
+| Medidor de volume no painel "Pode falar" | ✔ (o Android informa o volume) | — (o navegador não informa) |
+
+Detalhes na [04-camada-de-voz-js.md](04-camada-de-voz-js.md).
+
+## Conferir a qualquer momento
+
+```bash
+# a partir da raiz do repositório do app
+cmp www/index.html /caminho/do/cronofoco.html && echo "idênticos"
+md5sum www/index.html /caminho/do/cronofoco.html
+# no Windows (PowerShell): Get-FileHash www\index.html, C:\...\cronofoco.html -Algorithm MD5
+```
+
+Se não forem idênticos, alguém mudou um dos dois sem copiar para o outro — ver
+[07](07-sincronizacao-com-o-site.md).
+
+---
+
+## Histórico: como era até o app 1.2 (site v41)
+
+Até a 1.2 o app tinha uma camada de voz que o site não tinha (o site só podia ser testado dentro do
+link do Claude, que bloqueia o microfone). Na v42 do site essa camada inteira foi **levada para o
+site** — os 13 blocos abaixo passaram a fazer parte do `cronofoco.html` — e o motor do navegador foi
+reescrito para entregar as frases do mesmo jeito que o motor nativo. Com isso a diferença zerou. O
+diff completo daquela época está guardado em
+`sincronizacao/historico/diferencas-site-v41-para-app-1.2.diff` (base em
+`sincronizacao/historico/base-site-v41.html`).
+
+### Resumo (v41 × 1.2)
 
 | | Site v41 | App 1.2 |
 |---|---|---|
@@ -22,7 +69,7 @@ Fora da voz, **não há nenhuma diferença**: nenhuma regra, conteúdo ou texto 
 o aviso do modo voz do Cálculo. Os `unlockAt` também são iguais (o Stroop voltou a abrir com 5
 sessões no app 1.2; para testar sem cumprir a trilha, use o código VASSOURA).
 
-## Todos os blocos de diferença
+### Os 13 blocos de diferença (v41 × 1.2)
 
 Linhas do site (v41) → linhas do app (1.2).
 
@@ -42,19 +89,11 @@ Linhas do site (v41) → linhas do app (1.2).
 | 12 | 2064 | 2632–2642 | Cálculo | Resultado com relatório de voz conta por conta (`voiceReportBlock`) |
 | 13 | 2187–2254 | 2760–2885 | Stroop | `startVoiceSequence` por alinhamento (`cellState`, `cellHeard`, `freeze`, espera de 450 ms); `stopVoiceSeq` usando o controlador; `finish` com proteção contra dupla chamada, contagem ok/bad/miss, métricas "Cor certa / errada" e "Não captadas pelo microfone", `stroopVoiceBreakdown` |
 
-## O que é igual e deve continuar igual
+### O que mudou além da cópia, ao levar a voz para o site (v42 / app 1.3)
 
-Todas as outras ~6.700 linhas: gate de acesso e `LICENSES`, roteador, Início e trilha, todos os
-exercícios (fora a voz), passatempos, concursos, flashcards, leitura, dicas, resultado, histórico,
-chaves de `localStorage`, CSS de tema. Qualquer mudança nessas partes deve ser feita no site e
-trazida para o app pela sincronização ([07](07-sincronizacao-com-o-site.md)).
-
-## Conferir as diferenças a qualquer momento
-
-```bash
-# a partir da raiz do repositório
-diff -u docs/sincronizacao/base-site-v41.html www/index.html | less
-# ou, no Windows (Git Bash): git diff --no-index docs/sincronizacao/base-site-v41.html www/index.html
-```
-
-Se aparecer diferença fora dos blocos acima, o app e o site deixaram de estar iguais.
+| Mudança | Por quê |
+|---|---|
+| Motor do navegador entrega **cada resultado final como uma frase (sessão) separada**, com as alternativas dele | No modo contínuo do Chrome o texto acumulado era entregue como uma frase só; quando uma resposta do Cálculo vinha de uma alternativa, o texto principal não tinha aquele número e a contagem se perdia (defeito encontrado nos testes) |
+| No celular (Chrome Android, Safari iPhone) o navegador usa **uma escuta por frase** (`continuous = false`) e reabre sozinho | O modo contínuo é instável nos navegadores de celular (repete trechos) |
+| Mensagens de erro separadas para navegador e Android; erro `language-not-supported` tratado | Orientar a pessoa pelo caminho certo de cada ambiente |
+| Cabeçalho da seção VOZ reescrito | Documentar que o arquivo é o mesmo nos dois lugares |
