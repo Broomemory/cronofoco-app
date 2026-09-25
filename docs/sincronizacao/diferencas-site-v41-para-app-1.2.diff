@@ -1,0 +1,942 @@
+--- site v41 (cronofoco.html)
++++ app 1.2 (www/index.html)
+@@ -347,6 +347,21 @@
+   .mode-btn[aria-pressed="true"]{background:var(--accent-grad); border-color:var(--accent); color:var(--accent-ink);}
+   .mode-btn.disabled, .mode-btn:disabled{opacity:.45; cursor:not-allowed;}
+   .voice-banner{background:var(--accent-soft); color:var(--accent); border-radius:10px; padding:10px 14px; font-size:.85rem; font-weight:500; margin-bottom:16px;}
++  .voice-status{border:1px solid var(--line, rgba(0,0,0,.12)); border-radius:12px; padding:10px 14px; margin:14px 0; background:var(--card, transparent);}
++  .voice-status .vs-row{display:flex; align-items:center; gap:10px;}
++  .voice-status .vs-dot{width:12px; height:12px; border-radius:50%; background:#999; flex:none;}
++  .voice-status[data-state="live"] .vs-dot{background:#2E9A5E; animation:vsPulse 1.2s ease-in-out infinite;}
++  .voice-status[data-state="busy"] .vs-dot{background:#D0A400;}
++  .voice-status[data-state="error"] .vs-dot{background:var(--danger, #D6453D);}
++  .voice-status .vs-label{font-weight:600; flex:1; font-size:.95rem;}
++  .voice-status[data-state="error"] .vs-label{color:var(--danger, #D6453D); font-weight:500; font-size:.85rem;}
++  .voice-status .vs-meter{width:70px; height:8px; border-radius:4px; background:rgba(128,128,128,.25); overflow:hidden; flex:none;}
++  .voice-status .vs-meter-fill{display:block; height:100%; width:0%; background:#2E9A5E; transition:width .12s linear;}
++  .voice-status .vs-heard{margin-top:6px; font-size:.85rem; opacity:.85; min-height:1.2em; word-break:break-word;}
++  .voice-status .vs-heard.ok{color:#2E9A5E;}
++  .voice-status .vs-heard.bad{color:var(--danger, #D6453D);}
++  .voice-status .vs-heard.warn{color:var(--gold, #D0A400);}
++  @keyframes vsPulse{0%,100%{opacity:1; transform:scale(1);} 50%{opacity:.55; transform:scale(.8);}}
+ 
+   /* ---------- calc: controls / live feedback / upcoming / ledger ---------- */
+   .calc-input.live-wrong{border-color:var(--danger); color:var(--danger);}
+@@ -378,6 +393,21 @@
+   .stroop-word.pointer{outline:2px solid var(--accent); outline-offset:2px; background:var(--accent-soft);}
+   .stroop-word.voice-correct{background:var(--accent-soft);}
+   .stroop-word.voice-wrong{background:var(--danger-soft);}
++  .stroop-word.voice-miss{background:rgba(128,128,128,.18); outline:1px dashed rgba(128,128,128,.6); outline-offset:-1px;}
++  .voice-breakdown{margin-top:6px;}
++  .voice-breakdown .vb-legend{display:flex; gap:14px; flex-wrap:wrap; font-size:.8rem; color:var(--ink-muted); margin:8px 0 10px;}
++  .voice-breakdown .vb-legend span::before{content:""; display:inline-block; width:10px; height:10px; border-radius:3px; margin-right:5px; vertical-align:-1px;}
++  .voice-breakdown .vb-ok::before{background:var(--accent-soft); border:1px solid var(--accent);}
++  .voice-breakdown .vb-bad::before{background:var(--danger-soft); border:1px solid var(--danger);}
++  .voice-breakdown .vb-miss::before{background:rgba(128,128,128,.18); border:1px dashed rgba(128,128,128,.7);}
++  .voice-breakdown .vb-grid{display:grid; grid-template-columns:repeat(auto-fill,minmax(92px,1fr)); gap:6px;}
++  .voice-breakdown .vb-cell{border-radius:8px; padding:5px 4px; text-align:center; font-family:'IBM Plex Mono',monospace; font-size:.78rem; font-weight:600; line-height:1.25;}
++  .voice-breakdown .vb-cell small{display:block; font-weight:500; font-size:.68rem; color:var(--ink-muted);}
++  .voice-breakdown .vb-cell.ok{background:var(--accent-soft);}
++  .voice-breakdown .vb-cell.bad{background:var(--danger-soft);}
++  .voice-breakdown .vb-cell.miss{background:rgba(128,128,128,.14); outline:1px dashed rgba(128,128,128,.6); outline-offset:-1px;}
++  .voice-breakdown details{margin-top:12px; font-size:.8rem;}
++  .voice-breakdown pre{white-space:pre-wrap; word-break:break-word; max-height:220px; overflow:auto; background:var(--surface-2); padding:10px; border-radius:8px; font-size:.72rem;}
+ 
+   /* ---------- memorization: help story + recall fields ---------- */
+   .help-toggle{display:flex; align-items:center; gap:8px; font-size:.88rem; color:var(--ink-muted); margin-bottom:16px; cursor:pointer;}
+@@ -1106,8 +1136,121 @@
+     }
+   }
+ 
+-  /* ============================= VOZ (Web Speech API) ============================= */
+-  function getSpeechCtor(){ return window.SpeechRecognition || window.webkitSpeechRecognition || null; }
++  /* ============================= VOZ (Web Speech API + ponte nativa Android) =============================
++     No navegador (inclusive o Artifact publicado), a voz usa a Web Speech API normal. Dentro do app
++     Android empacotado com Capacitor, a Web Speech API não existe na WebView — em vez dela, usamos o
++     plugin @capacitor-community/speech-recognition, que fala com o SpeechRecognizer nativo do Android
++     (pede a permissão RECORD_AUDIO, mesmo mecanismo dos apps do próprio Google).
++     A ponte abaixo (NativeSpeechRecognitionShim) imita a forma como o restante do código já usa a Web
++     Speech API (recognizer.lang, .continuous, .onresult, .onerror, .onend, .start(), .stop()) — assim
++     nenhuma linha das telas de Cálculo Mental e Stroop precisa mudar; elas continuam chamando
++     getSpeechCtor() normalmente e recebem o shim nativo sem saber a diferença. */
++  function isNativePlatform(){
++    try{ return !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform()); }
++    catch(e){ return false; }
++  }
++  function nativeSpeechPlugin(){
++    try{ return window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.SpeechRecognition; }
++    catch(e){ return null; }
++  }
++  /* O reconhecedor nativo do Android só ouve UMA frase por vez: ele encerra sozinho após alguns
++     segundos de silêncio (erro "No speech input"/"No match") ou ao fim de cada frase. Para imitar o
++     modo contínuo do navegador, o shim reinicia a escuta por conta própria quando continuous=true,
++     tratando silêncio/"não entendi" como algo normal (não como erro), e só dispara onend quando
++     alguém chama stop() ou acontece um erro fatal (permissão negada / sem microfone).
++     _nativeLastEnd garante um respiro mínimo entre uma sessão nativa e a próxima — reiniciar rápido
++     demais faz o Android responder "RecognitionService busy"/"Client side error". */
++  var _nativeLastEnd = 0;
++  function NativeSpeechRecognitionShim(){
++    this.lang = "pt-BR";
++    this.continuous = false;
++    this.interimResults = false;
++    this.maxAlternatives = 3;
++    this.onresult = null;
++    this.onerror = null;
++    this.onend = null;
++    this._active = false;
++    this._timer = null;
++    this._retries = 0;
++  }
++  NativeSpeechRecognitionShim.prototype.start = function(){
++    var self = this;
++    var SR = nativeSpeechPlugin();
++    if(!SR){ self._fireError("audio-capture"); return; }
++    self._active = true;
++    self._retries = 0;
++    SR.requestPermissions().then(function(perm){
++      if(!self._active) return;
++      var granted = !perm || perm.speechRecognition === "granted" || perm.speechRecognition === undefined;
++      if(!granted){ self._fireError("not-allowed"); return; }
++      self._listen();
++    }).catch(function(){
++      if(self._active) self._fireError("not-allowed");
++    });
++  };
++  NativeSpeechRecognitionShim.prototype._listen = function(){
++    var self = this;
++    var SR = nativeSpeechPlugin();
++    if(!SR){ self._fireError("audio-capture"); return; }
++    // Respiro mínimo desde a última sessão + recuo gradual se o Android estiver devolvendo erro seguido.
++    var gap = 350 + Math.min(self._retries, 10) * 150;
++    var wait = Math.max(0, gap - (Date.now() - _nativeLastEnd));
++    if(self._timer) clearTimeout(self._timer);
++    self._timer = setTimeout(function(){
++      self._timer = null;
++      if(!self._active) return;
++      SR.start({
++        language: self.lang || "pt-BR",
++        maxResults: self.maxAlternatives || 3,
++        partialResults: false,
++        popup: false
++      }).then(function(res){
++        _nativeLastEnd = Date.now();
++        if(!self._active) return;
++        self._retries = 0;
++        var matches = (res && res.matches) || [];
++        if(matches.length && self.onresult){
++          // Mesmo formato do evento do navegador: ev.resultIndex, ev.results[i].isFinal, ev.results[i][0].transcript
++          var alts = matches.map(function(m){ return {transcript: m, confidence: 1}; });
++          alts.isFinal = true;
++          try{ self.onresult({resultIndex: 0, results: [alts]}); }catch(e){}
++        }
++        if(!self._active) return; // onresult pode ter encerrado o exercício (stop)
++        if(self.continuous){ self._listen(); }
++        else { self._active = false; if(self.onend){ try{ self.onend(); }catch(e){} } }
++      }).catch(function(err){
++        _nativeLastEnd = Date.now();
++        if(!self._active) return;
++        var msg = ((err && err.message) || String(err || "")).toLowerCase();
++        if(msg.indexOf("permission") !== -1){ self._fireError("not-allowed"); return; }
++        self._retries++;
++        if(msg.indexOf("audio recording") !== -1 && self._retries > 3){ self._fireError("audio-capture"); return; }
++        // Silêncio, "não entendi", serviço ocupado, erro de rede momentâneo: no modo contínuo só
++        // volta a ouvir; no modo de uma frase só avisa "no-speech" (a tela de Cálculo reabre a escuta).
++        if(self.continuous){ self._listen(); }
++        else { self._fireError("no-speech"); }
++      });
++    }, wait);
++  };
++  NativeSpeechRecognitionShim.prototype._fireError = function(code){
++    var self = this;
++    self._active = false;
++    if(self._timer){ clearTimeout(self._timer); self._timer = null; }
++    if(self.onerror){ try{ self.onerror({error: code}); }catch(e){} }
++    if(self.onend){ try{ self.onend(); }catch(e){} }
++  };
++  NativeSpeechRecognitionShim.prototype.stop = function(){
++    this._active = false;
++    if(this._timer){ clearTimeout(this._timer); this._timer = null; }
++    _nativeLastEnd = Date.now();
++    var SR = nativeSpeechPlugin();
++    if(SR){ try{ SR.stop(); }catch(e){} }
++  };
++
++  function getSpeechCtor(){
++    if(isNativePlatform()) return NativeSpeechRecognitionShim;
++    return window.SpeechRecognition || window.webkitSpeechRecognition || null;
++  }
+   function speechSupported(){ return !!getSpeechCtor(); }
+   function inIframe(){
+     // Published Artifacts often render inside an embedded frame (the chat side panel).
+@@ -1115,6 +1258,8 @@
+     // it — Claude's frame doesn't — so SpeechRecognition fails instantly with "not-allowed"
+     // and the browser never even shows the mic prompt. Opening the artifact's own URL in a
+     // separate browser tab runs it top-level instead, where the normal prompt works.
++    // Dentro do app Android (não é iframe nenhum) isso nunca se aplica.
++    if(isNativePlatform()) return false;
+     try{ return window.self !== window.top; }catch(e){ return true; }
+   }
+   function voiceUsable(){ return speechSupported() && !inIframe(); }
+@@ -1126,8 +1271,10 @@
+   // Even outside the iframe, the browser can only ask for mic permission if the OS/browser
+   // reports an actual microphone device. If none is found, getUserMedia/SpeechRecognition
+   // fail instantly (no prompt at all) — check this upfront so we can explain it clearly
+-  // instead of the mode silently doing nothing.
++  // instead of the mode silently doing nothing. Dentro do app Android o próprio plugin nativo
++  // cuida da permissão/hardware quando o modo voz é iniciado, então pulamos essa checagem.
+   function micDeviceAvailable(){
++    if(isNativePlatform()) return Promise.resolve(true);
+     if(!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) return Promise.resolve(true);
+     return navigator.mediaDevices.enumerateDevices().then(function(list){
+       return list.some(function(d){ return d.kind === "audioinput"; });
+@@ -1142,7 +1289,8 @@
+   };
+   function wordsToNumber(text){
+     var norm = normWord(text).replace(/-/g," ");
+-    var tokens = norm.split(/\s+/).filter(Boolean);
++    // Idem cores: ignora pontuação que o reconhecedor do Android costuma acrescentar ("Cinco.").
++    var tokens = norm.split(/[^a-z0-9]+/).filter(Boolean);
+     var total = 0, found = false;
+     for(var i=0;i<tokens.length;i++){
+       var tok = tokens[i];
+@@ -1152,20 +1300,391 @@
+     return found ? total : null;
+   }
+   function parseSpokenNumber(text){
+-    var digits = (text||"").replace(/[^\d]/g,"");
+-    if(digits !== "") return parseInt(digits,10);
++    // Se vierem vários grupos de dígitos ("6 x 7 42"), vale o último — é a resposta.
++    var groups = (text||"").match(/\d+/g);
++    if(groups && groups.length) return parseInt(groups[groups.length-1],10);
+     return wordsToNumber(text);
+   }
++  /* Separa TODOS os números de um texto falado, na ordem: "doze trinta e cinco 7" → [12, 35, 7].
++     Junta dezena + unidade ("vinte e cinco", "vinte cinco" → 25) e centena ("cento e dez" → 110).
++     Números colados a uma operação ("seis vezes sete", "6 x 7") são descartados — é a pessoa lendo
++     a conta em voz alta, não a resposta. Inclui palavras que o reconhecedor costuma confundir
++     ("Deus" → 10, "novo" → 9, "sem" → 100, "dose" → 12, "treis" → 3...). */
++  var NUM_ALIASES = {"deus":10,"des":10,"dés":10,"novo":9,"sem":100,"hum":1,"dose":12,"doses":12,"treis":3,"trez":3,"tress":3,
++    "sais":6,"seiz":6,"set":7,"seti":7,"oitu":8,"quatru":4,"sinco":5,"dezeseis":16,"dezesete":17,"dezasseis":16,"dezassete":17,
++    "dezanove":19,"catorse":14,"quatorse":14,"cincoenta":50,"sesenta":60,"doiz":2,"dous":2};
++  var NUM_OPS = {"mais":1,"menos":1,"vezes":1,"x":1,"por":1,"dividido":1,"op":1};
++  function numWordValue(tok){
++    if(PT_NUM_WORDS.hasOwnProperty(tok)) return PT_NUM_WORDS[tok];
++    if(NUM_ALIASES.hasOwnProperty(tok)) return NUM_ALIASES[tok];
++    return null;
++  }
++  function extractSpokenNumbers(text){
++    var raw = normWord(text).replace(/[×*+÷\/]|(^|\s)-(\s|$)/g, " op ").replace(/=/g, " ");
++    var toks = raw.split(/[^a-z0-9]+/).filter(Boolean);
++    var items = [], cur = null;
++    function flush(){ if(cur){ items.push({v:cur.v}); cur = null; } }
++    for(var i=0;i<toks.length;i++){
++      var t = toks[i];
++      if(/^\d+$/.test(t)){ flush(); items.push({v:parseInt(t,10)}); continue; }
++      if(NUM_OPS[t]){ flush(); items.push({op:true}); continue; }
++      if(t === "e") continue;
++      var v = numWordValue(t);
++      if(v === null){ flush(); continue; }
++      if(cur){
++        if(cur.v >= 100 && cur.v % 100 === 0 && v < 100){ cur.v += v; cur.tens = (v >= 20 && v % 10 === 0); continue; }
++        if(cur.tens && v >= 1 && v <= 9){ cur.v += v; cur.tens = false; continue; }
++        flush();
++      }
++      cur = {v:v, tens:(v >= 20 && v < 100 && v % 10 === 0)};
++    }
++    flush();
++    var out = [];
++    for(var k=0;k<items.length;k++){
++      if(items[k].op) continue;
++      var prevOp = k > 0 && items[k-1].op, nextOp = k < items.length-1 && items[k+1].op;
++      if(!prevOp && !nextOp) out.push(items[k].v);
++    }
++    return out;
++  }
++  // O reconhecedor às vezes junta duas respostas seguidas num número só. Dado o número que já tinha
++  // sido usado (prev) e como ele aparece agora (now), devolve a parte nova — ou null se não der
++  // para explicar como "prev + algo depois". Ex.: 20→21 dá 1; 10→100 dá 0; 1→12 dá 2; 7→75 dá 5.
++  function numberAddedTo(prev, now){
++    if(prev >= 20 && prev < 100 && prev % 10 === 0 && now > prev && now - prev <= 9) return now - prev;
++    if(prev >= 100 && prev % 100 === 0 && now > prev && now - prev < 100) return now - prev;
++    var a = String(prev), b = String(now);
++    if(b.length > a.length && b.indexOf(a) === 0) return parseInt(b.slice(a.length), 10);
++    return null;
++  }
++  function firstSpokenNumber(texts){
++    for(var i=0;i<texts.length;i++){
++      var v = parseSpokenNumber(texts[i]);
++      if(v !== null && !isNaN(v)) return v;
++    }
++    return null;
++  }
++  // Variações que o reconhecedor costuma devolver para cada cor (feminino, plural, grafias erradas).
++  var COLOR_ALIASES = {
++    1:["azul","azuis","asul"],
++    2:["vermelho","vermelha","vermelhos","vermelhas","vermelio"],
++    3:["amarelo","amarela","amarelos","amarelas"],
++    4:["verde","verdes","verdi"],
++    5:["roxo","roxa","roxos","roxas","rocho","rouxo","ruxo","rocha","rosso","rosto","roche","rox","rock","roxy","hoxo","roco","rochos"],
++    6:["laranja","laranjas"]
++  };
++  var COLOR_LOOKUP = (function(){
++    var m = {};
++    Object.keys(COLOR_ALIASES).forEach(function(id){ COLOR_ALIASES[id].forEach(function(w){ m[w] = +id; }); });
++    return m;
++  })();
++  // Aproximação por "som": para palavras que não bateram exatamente, compara uma forma fonética
++  // simplificada (x → ch, h inicial → r, final a/e/u → o...) com as cores, aceitando 1 letra de
++  // diferença (2 nas palavras longas). Pega transcrições tortas como "Rochu" ou "vermeio".
++  function colorPhon(w){
++    return w.replace(/^h/,"r").replace(/x/g,"ch").replace(/ss/g,"s").replace(/rr/g,"r").replace(/lh/g,"li").replace(/[aeiu]$/,"o");
++  }
++  function editDist(a, b){
++    var m = a.length, n = b.length, prev = [], cur2 = [];
++    for(var j=0;j<=n;j++) prev[j] = j;
++    for(var i=1;i<=m;i++){
++      cur2 = [i];
++      for(var j2=1;j2<=n;j2++) cur2[j2] = Math.min(prev[j2]+1, cur2[j2-1]+1, prev[j2-1] + (a[i-1] === b[j2-1] ? 0 : 1));
++      prev = cur2;
++    }
++    return prev[n];
++  }
++  var COLOR_PHON = (function(){
++    var list = [];
++    // Verde e azul ficam de fora: há muitas palavras comuns a 1 letra delas ("vendo", "verba"...).
++    COLORS.forEach(function(c){ if(c.id !== 1 && c.id !== 4) list.push({id:c.id, p:colorPhon(normWord(c.name))}); });
++    return list;
++  })();
++  function fuzzyColor(tok){
++    if(tok.length < 4) return null;
++    var p = colorPhon(tok), best = null, bestD = 99;
++    COLOR_PHON.forEach(function(c){
++      var d = editDist(p, c.p);
++      var limit = c.p.length >= 7 ? 2 : 1;
++      if(d <= limit && d < bestD){ bestD = d; best = c.id; }
++    });
++    return best;
++  }
+   function extractColorTokens(text){
+     var norm = normWord(text);
+-    var tokens = norm.split(/\s+/).filter(Boolean);
++    // O reconhecedor do Android costuma devolver pontuação ("Azul, vermelho.") — separa por
++    // qualquer coisa que não seja letra/número, não só por espaço.
++    var tokens = norm.split(/[^a-z0-9]+/).filter(Boolean);
+     var out = [];
+-    tokens.forEach(function(tok){
+-      for(var i=0;i<COLORS.length;i++){
+-        if(tok === normWord(COLORS[i].name)){ out.push(COLORS[i].id); break; }
++    for(var i=0;i<tokens.length;i++){
++      var tok = tokens[i], next = tokens[i+1];
++      // palavra cortada em duas: "a sul" → azul, "ver de" → verde
++      if((tok === "a" || tok === "as" || tok === "ah") && next === "sul"){ out.push(1); i++; continue; }
++      if(tok === "ver" && next === "de"){ out.push(4); i++; continue; }
++      if(COLOR_LOOKUP.hasOwnProperty(tok)){ out.push(COLOR_LOOKUP[tok]); continue; }
++      var fz = fuzzyColor(tok);
++      if(fz !== null) out.push(fz);
++    }
++    return out;
++  }
++
++  /* Alinha as cores ouvidas (tokens) com as cores esperadas da grade (expected), como um "diff":
++     cada palavra da grade vira "ok" (disse a cor certa), "bad" (disse outra cor) ou "miss" (o
++     microfone não captou nenhuma palavra ali); palavras ouvidas que não se encaixam em nada são
++     descartadas. Custos: acerto 0, cor errada 1, palavra não captada 1,2, palavra sobrando 1,5 —
++     assim uma palavra perdida pelo reconhecedor vira um "miss" isolado em vez de deslocar todas
++     as seguintes. Olha no máximo 4 palavras à frente por sessão do reconhecedor.
++     Retorna {cells:[{state, heard}], consumed}. */
++  function alignColorTokens(tokens, expected){
++    var n = tokens.length, m = Math.min(expected.length, n + 4);
++    var SUB = 1, SKIP = 1.2, INS = 1.5;
++    var D = [], B = [];
++    for(var i=0;i<=n;i++){ D.push(new Array(m+1)); B.push(new Array(m+1)); }
++    D[0][0] = 0;
++    for(var j=1;j<=m;j++){ D[0][j] = j*SKIP; B[0][j] = "skip"; }
++    for(var i2=1;i2<=n;i2++){
++      D[i2][0] = i2*INS; B[i2][0] = "ins";
++      for(var j2=1;j2<=m;j2++){
++        var diag = D[i2-1][j2-1] + (tokens[i2-1] === expected[j2-1] ? 0 : SUB);
++        var ins = D[i2-1][j2] + INS;
++        var skip = D[i2][j2-1] + SKIP;
++        var best = diag, op = "diag";
++        if(skip < best){ best = skip; op = "skip"; }
++        if(ins < best){ best = ins; op = "ins"; }
++        D[i2][j2] = best; B[i2][j2] = op;
+       }
++    }
++    var end = 0;
++    for(var e=1;e<=m;e++){ if(D[n][e] < D[n][end] - 1e-9) end = e; }
++    var out = [];
++    for(var k=0;k<end;k++) out.push({state:"miss", heard:null});
++    var a = n, b = end;
++    while(a > 0 || b > 0){
++      var o = B[a][b];
++      if(o === "diag"){ out[b-1] = {state: tokens[a-1] === expected[b-1] ? "ok" : "bad", heard: tokens[a-1]}; a--; b--; }
++      else if(o === "skip"){ out[b-1] = {state:"miss", heard:null}; b--; }
++      else { a--; }
++    }
++    return {cells: out, consumed: end};
++  }
++  function colorName(id){ for(var i=0;i<COLORS.length;i++) if(COLORS[i].id === id) return COLORS[i].name; return "?"; }
++
++  function copyText(text){
++    function fallback(){
++      try{
++        var ta = document.createElement("textarea");
++        ta.value = text; ta.setAttribute("readonly",""); ta.style.position = "fixed"; ta.style.opacity = "0";
++        document.body.appendChild(ta); ta.select(); var ok = document.execCommand("copy"); ta.remove();
++        return Promise.resolve(ok);
++      }catch(e){ return Promise.resolve(false); }
++    }
++    try{
++      if(navigator.clipboard && navigator.clipboard.writeText) return navigator.clipboard.writeText(text).then(function(){ return true; }, fallback);
++    }catch(e){}
++    return fallback();
++  }
++
++  // Resultado do Stroop por voz: palavra por palavra (certa / cor errada / não captada) + relatório
++  // técnico do que o reconhecedor devolveu, que pode ser copiado e enviado para ajustar o app.
++  function stroopVoiceBreakdown(cells, states, heard, log, ctl){
++    var wrap = el("div",{class:"voice-breakdown"});
++    wrap.appendChild(el("div",{class:"calc-hint", style:"font-weight:600; color:var(--ink);"},["Conferência palavra por palavra"]));
++    wrap.appendChild(el("div",{class:"vb-legend"},[
++      el("span",{class:"vb-ok"},["cor certa"]), el("span",{class:"vb-bad"},["cor errada"]), el("span",{class:"vb-miss"},["não captada (não conta como erro)"])
++    ]));
++    var grid = el("div",{class:"vb-grid"});
++    var lines = [];
++    cells.forEach(function(c, i){
++      var st = states[i] || "miss";
++      var want = colorName(c.displayColorId);
++      var sub = st === "ok" ? "✓" : st === "bad" ? "ouvi " + colorName(heard[i]).toLowerCase() : "não captada";
++      grid.appendChild(el("div",{class:"vb-cell " + st},[(i+1) + ". " + want, el("small",{},[sub])]));
++      lines.push((i+1) + ". " + want + " → " + (st === "ok" ? "ok" : st === "bad" ? "ouviu " + colorName(heard[i]) : "não captada"));
+     });
+-    return out;
++    wrap.appendChild(grid);
++
++    var okN = states.filter(function(s){ return s === "ok"; }).length;
++    var badN = states.filter(function(s){ return s === "bad"; }).length;
++    voiceReportBlock(wrap, "Stroop",
++      okN + " certas, " + badN + " erradas, " + (cells.length - okN - badN) + " não captadas, de " + cells.length,
++      "Palavra por palavra (cor da tinta esperada):", lines, log, ctl);
++    return wrap;
++  }
++  // Botão "Copiar relatório de voz" + relatório técnico (o que o reconhecedor devolveu, com tempos).
++  function voiceReportBlock(wrap, title, resultLine, linesTitle, lines, log, ctl){
++    var report = [
++      "Cronofoco — relatório de voz (" + title + ")",
++      "Data: " + new Date().toLocaleString("pt-BR"),
++      "Motor de voz: " + ((ctl && ctl.service) || (isNativePlatform() ? "?" : "navegador")),
++      "Aparelho: " + navigator.userAgent,
++      "Resultado: " + resultLine,
++      "",
++      linesTitle,
++      lines.join("\n"),
++      "",
++      "O que o reconhecedor devolveu:"
++    ].concat((log || []).map(function(e){
++      return "+" + (e.t/1000).toFixed(1) + "s " + (e.s ? "[" + e.s + "] " : "") + e.type + (e.text ? ": " + e.text : "");
++    })).join("\n");
++    var copyBtn = el("button",{class:"btn secondary", type:"button"},["📋 Copiar relatório de voz"]);
++    copyBtn.addEventListener("click", function(){
++      copyText(report).then(function(ok){
++        copyBtn.textContent = ok ? "✓ Copiado — é só colar na conversa" : "Não deu para copiar — veja o texto abaixo";
++      });
++    });
++    wrap.appendChild(el("div",{class:"actions-row", style:"margin-top:12px; justify-content:flex-start;"},[copyBtn]));
++    wrap.appendChild(el("details",{},[el("summary",{},["Ver relatório técnico"]), el("pre",{},[report])]));
++    return wrap;
++  }
++
++  /* ============================= ENTRADA DE VOZ CONTÍNUA =============================
++     startVoiceInput() mantém o microfone ouvindo até stop(), e entrega o texto AO VIVO:
++       onText(texto, final, alternativas, sessão) — "sessão" muda sempre que o reconhecedor
++       recomeça do zero (fim de frase, silêncio, restart()); dentro de uma sessão o texto é acumulado.
++       onState("ready"|"speech"|"end"|"started"|"stopped"), onLevel(volume), onError(código, fatal).
++     No app Android usa o plugin nativo CronoVoice (motor do Google, resultados parciais, reinício
++     automático feito no próprio Android). No navegador usa a Web Speech API em modo contínuo. */
++  var _cronoVoice = null;
++  function cronoVoicePlugin(){
++    if(_cronoVoice) return _cronoVoice;
++    try{
++      var C = window.Capacitor;
++      if(!C || !isNativePlatform()) return null;
++      if(C.isPluginAvailable && !C.isPluginAvailable("CronoVoice")) return null;
++      _cronoVoice = C.registerPlugin ? C.registerPlugin("CronoVoice") : (C.Plugins && C.Plugins.CronoVoice) || null;
++    }catch(e){ _cronoVoice = null; }
++    return _cronoVoice;
++  }
++  function startVoiceInput(h){
++    var ctl = {stopped:false, service:null, stop:function(){}, restart:function(){}, log:[]};
++    // Registro do que o reconhecedor devolveu (para o "Relatório de voz" no fim do exercício).
++    var t0 = Date.now(), lastLogged = {};
++    function log(type, s, text){
++      if(ctl.log.length > 600) return;
++      ctl.log.push({t: Date.now()-t0, type: type, s: s, text: text});
++    }
++    function emitText(t, fin, alts, s){
++      if(ctl.stopped) return;
++      if(fin || lastLogged[s] !== t){ lastLogged[s] = t; log(fin ? "final" : "parcial", s, (t||"") + (fin && alts && alts.length > 1 ? "  [alt: " + alts.slice(1).join(" | ") + "]" : "")); }
++      if(h.onText) h.onText(t||"", fin, alts||[], s);
++    }
++    function emitState(s, info){
++      if(ctl.stopped) return;
++      if(s === "started") log("início", "", "motor: " + ((info && info.service) || "navegador"));
++      else if(s === "ready" || s === "end") log(s === "ready" ? "ouvindo" : "pausa", "", "");
++      if(h.onState) h.onState(s, info||{});
++    }
++    function emitError(code, fatal){ if(ctl.stopped) return; log("erro", "", code + (fatal ? " (fatal)" : "")); if(fatal) ctl.stop(); if(h.onError) h.onError(code, fatal); }
++
++    var P = cronoVoicePlugin();
++    if(P){
++      var handles = [];
++      var add = function(ev, fn){
++        try{
++          Promise.resolve(P.addListener(ev, function(d){ if(!ctl.stopped) fn(d||{}); })).then(function(hd){
++            if(ctl.stopped){ try{ hd.remove(); }catch(e){} } else handles.push(hd);
++          }).catch(function(){});
++        }catch(e){}
++      };
++      var bestOf = function(m){ return (m && m.length) ? m[0] : ""; };
++      add("voicePartial", function(d){ emitText(bestOf(d.matches), false, d.matches, "n"+d.session); });
++      add("voiceResult", function(d){ emitText(bestOf(d.matches), true, d.matches, "n"+d.session); });
++      add("voiceState", function(d){ emitState(d.state, d); });
++      add("voiceLevel", function(d){ if(!ctl.stopped && h.onLevel) h.onLevel(d.rms); });
++      add("voiceError", function(d){ emitError(d.code, !!d.fatal); });
++      var perm = nativeSpeechPlugin();
++      Promise.resolve(perm && perm.requestPermissions ? perm.requestPermissions() : null).then(function(p){
++        if(ctl.stopped) return;
++        var granted = !p || p.speechRecognition === "granted" || p.speechRecognition === undefined;
++        if(!granted){ emitError("not-allowed", true); return; }
++        return P.start({language:"pt-BR", maxResults:5}).then(function(info){
++          ctl.service = info && info.service;
++          emitState("started", info);
++        });
++      }).catch(function(){ emitError("not-allowed", true); });
++      ctl.stop = function(){
++        if(ctl._done) return; ctl._done = true; ctl.stopped = true;
++        try{ P.stop(); }catch(e){}
++        handles.forEach(function(hd){ try{ hd.remove(); }catch(e){} }); handles = [];
++      };
++      ctl.restart = function(){ if(!ctl.stopped){ try{ P.restart(); }catch(e){} } };
++      return ctl;
++    }
++
++    // ---- navegador: Web Speech API ----
++    var Ctor = window.SpeechRecognition || window.webkitSpeechRecognition;
++    if(!Ctor){ setTimeout(function(){ emitError("audio-capture", true); }, 0); return ctl; }
++    var session = 0, rec = null;
++    function begin(){
++      if(ctl.stopped) return;
++      session++;
++      var mine = session;
++      rec = new Ctor();
++      rec.lang = "pt-BR"; rec.continuous = true; rec.interimResults = true; rec.maxAlternatives = 5;
++      rec.onstart = function(){ if(mine === session) emitState("ready"); };
++      rec.onspeechstart = function(){ if(mine === session) emitState("speech"); };
++      rec.onresult = function(ev){
++        if(mine !== session) return;
++        var parts = [], fin = true;
++        for(var i=0;i<ev.results.length;i++){ parts.push(ev.results[i][0].transcript); if(!ev.results[i].isFinal) fin = false; }
++        var last = ev.results[ev.results.length-1], prefix = parts.slice(0,-1).join(" "), alts = [];
++        for(var k=0;k<last.length;k++) alts.push((prefix ? prefix+" " : "") + last[k].transcript);
++        emitText(parts.join(" "), fin, alts, "w"+mine);
++      };
++      rec.onerror = function(ev){
++        if(ev.error === "not-allowed" || ev.error === "service-not-allowed") emitError("not-allowed", true);
++        else if(ev.error === "audio-capture") emitError("audio-capture", true);
++        else if(ev.error === "network") emitError("network", false);
++      };
++      rec.onend = function(){ if(!ctl.stopped && mine === session){ emitState("end"); setTimeout(begin, 150); } };
++      try{ rec.start(); }catch(e){ setTimeout(begin, 400); }
++    }
++    ctl.stop = function(){ ctl.stopped = true; if(rec){ try{ rec.onend = null; rec.abort(); }catch(e){} } };
++    ctl.restart = function(){ if(rec && !ctl.stopped){ var r = rec; session++; try{ r.onend = null; r.abort(); }catch(e){} setTimeout(begin, 150); } };
++    begin();
++    return ctl;
++  }
++
++  // Painel "Pode falar / Ouvi: ..." com medidor de volume — mostra quando o app está ouvindo
++  // e o que ele entendeu, pra pessoa saber se precisa repetir.
++  var NATIVE_NO_MIC_MSG = "Não consegui usar o microfone. Feche outros apps que possam estar usando o microfone (gravador, ligação, assistente) e tente de novo.";
++  var NATIVE_LANG_MSG = "O reconhecimento de voz em português não está disponível neste aparelho. Atualize o app Google e baixe o idioma Português (Brasil) em Configurações → Google → Configurações dos apps do Google → Pesquisa, Assistente e Voz → Voz → Idiomas.";
++  function makeVoiceStatus(){
++    var label = el("span",{class:"vs-label"},["⏳ Ligando o microfone…"]);
++    var fill = el("span",{class:"vs-meter-fill"});
++    var heard = el("div",{class:"vs-heard"});
++    var root = el("div",{class:"voice-status", "data-state":"busy"},[
++      el("div",{class:"vs-row"},[el("span",{class:"vs-dot"}), label, el("span",{class:"vs-meter"},[fill])]),
++      heard
++    ]);
++    var netTimer = null, errored = false;
++    return {
++      el: root,
++      state: function(s){
++        if(errored) return;
++        if(s === "ready" || s === "speech"){ root.setAttribute("data-state","live"); label.textContent = s === "speech" ? "🎙 Ouvindo…" : "🎙 Pode falar"; }
++        else if(s === "end" || s === "started"){ root.setAttribute("data-state","busy"); label.textContent = "⏳ Um instante…"; fill.style.width = "0%"; }
++      },
++      level: function(rms){ var pct = Math.max(0, Math.min(100, ((+rms||0) + 2) / 12 * 100)); fill.style.width = pct + "%"; },
++      heard: function(txt, kind){
++        heard.textContent = txt ? "Ouvi: “" + txt + "”" : "";
++        heard.className = "vs-heard" + (kind ? " " + kind : "");
++      },
++      error: function(code, fatal){
++        var msg;
++        if(code === "not-allowed") msg = "Permissão de microfone negada. Libere o microfone para o Cronofoco nas configurações do Android, ou use o modo sem voz.";
++        else if(code === "audio-capture") msg = isNativePlatform() ? NATIVE_NO_MIC_MSG : NO_MIC_MSG;
++        else if(code === "language") msg = NATIVE_LANG_MSG;
++        else if(code === "network") msg = "⚠️ Sem conexão com a internet? O reconhecimento de voz precisa de internet.";
++        else msg = "O reconhecimento de voz parou (" + code + ").";
++        if(fatal){ errored = true; root.setAttribute("data-state","error"); label.textContent = msg; }
++        else {
++          heard.textContent = msg; heard.className = "vs-heard warn";
++          if(netTimer) clearTimeout(netTimer);
++          netTimer = setTimeout(function(){ if(heard.className.indexOf("warn") !== -1){ heard.textContent = ""; heard.className = "vs-heard"; } }, 4000);
++        }
++      }
++    };
+   }
+ 
+   /* ============================= HISTÓRIA MALUCA (ajuda de memorização) =============================
+@@ -1663,7 +2182,7 @@
+   var CALC_TOTALS = [30, 50, 100, 150, 200];
+   function renderCalc(root){
+     var TOTAL = 100;
+-    var idx, correct, startTime, timerHandle, questions, log, mode, recognizer, voiceRunning, questionStartTs;
++    var idx, correct, startTime, timerHandle, questions, log, mode, recognizer, voiceRunning, questionStartTs, voiceCtl = null, voiceStatus = null, voiceLogRef = null;
+     var typeKeyboardMode = "app"; // "app" (teclado próprio, desenhado na tela) ou "native" (teclado do celular)
+ 
+     var panel = el("div",{class:"panel"});
+@@ -1766,7 +2285,7 @@
+       body.innerHTML = "";
+       typeSkeletonReady = false;
+       if(mode === "voice"){
+-        body.appendChild(el("div",{class:"voice-banner"},["🎙 Modo voz: sua resposta falada é registrada na hora e você já passa para a próxima conta — não dá para corrigir. O histórico abaixo mostra só se acertou (✓) ou errou (✗), sem revelar o número certo."]));
++        body.appendChild(el("div",{class:"voice-banner"},["🎙 Modo voz: fale só o resultado de cada conta (ex.: \"quarenta e dois\"), sem ler a conta. A resposta é registrada na hora e você já passa para a próxima — não dá para corrigir. O histórico abaixo mostra só se acertou (✓) ou errou (✗), sem revelar o número certo."]));
+       }
+       var layout = el("div",{class:"calc-layout"},[
+         el("div",{class:"calc-main"},[el("div",{id:"calcQuestionArea"})]),
+@@ -1774,7 +2293,7 @@
+       ]);
+       body.appendChild(layout);
+       renderLedger();
+-      if(mode === "voice") renderQuestionVoice(); else renderQuestionType();
++      if(mode === "voice"){ startCalcVoice(); renderQuestionVoice(); } else renderQuestionType();
+     }
+ 
+     function restart(){ stopVoice(); start(mode || "type"); }
+@@ -1990,52 +2509,101 @@
+       var expr = el("div",{class:"calc-expr"},[String(q.a), el("span",{class:"op"},[q.op]), String(q.b), " ="]);
+       var hintEl = el("div",{class:"calc-hint calc-qcount"},["Questão "+(idx+1)+" de "+TOTAL]);
+       var row = el("div",{class:"calc-question-row"},[hintEl, expr]);
+-      var listening = el("div",{class:"calc-hint", style:"color:var(--accent); font-weight:600;"},["🎙 ouvindo a sua resposta..."]);
+-      stage.appendChild(row); stage.appendChild(el("div",{id:"calcUpcomingArea", class:"upcoming-box"})); stage.appendChild(listening);
++      stage.appendChild(row); stage.appendChild(el("div",{id:"calcUpcomingArea", class:"upcoming-box"}));
++      if(voiceStatus){ voiceStatus.heard(""); stage.appendChild(voiceStatus.el); }
++      stage.appendChild(el("button",{class:"btn ghost", type:"button", onclick:function(){ skipVoiceQuestion(); }},["⏭ Pular esta conta"]));
+       area.appendChild(stage);
+       renderUpcoming();
+-      listenOnce(q);
+     }
+ 
+-    function listenOnce(q){
+-      var Ctor = getSpeechCtor();
+-      if(!Ctor) return;
+-      try{
+-        recognizer = new Ctor();
+-        recognizer.lang = "pt-BR";
+-        recognizer.continuous = false;
+-        recognizer.interimResults = false;
+-        recognizer.maxAlternatives = 3;
+-        voiceRunning = true;
+-        recognizer.onresult = function(ev){
+-          var said = ev.results[0][0].transcript;
+-          var val = parseSpokenNumber(said);
+-          var ok = val !== null && val === q.answer;
+-          logAnswer(ok, "(falado)", Date.now()-questionStartTs);
+-          renderLedger();
+-          setTimeout(advance, 350);
+-        };
+-        recognizer.onerror = function(ev){
+-          voiceRunning = false;
+-          if(ev.error === "not-allowed" || ev.error === "service-not-allowed"){
+-            $("#calcQuestionArea", body).appendChild(el("div",{class:"calc-hint", style:"color:var(--danger);"},["Permissão de microfone negada. Reinicie e escolha o modo digitar."]));
+-          } else if(ev.error === "audio-capture"){
+-            $("#calcQuestionArea", body).appendChild(el("div",{class:"calc-hint", style:"color:var(--danger);"},[NO_MIC_MSG]));
+-          } else if(ev.error === "no-speech" && mode === "voice" && idx < TOTAL){
+-            listenOnce(q);
++    /* Um único microfone aberto durante o exercício inteiro, SEM reiniciar entre uma conta e outra
++       (cada reinício leva ~0,5–1 s para o Android voltar a ouvir, e o começo da resposta seguinte se
++       perdia). O texto de cada sessão do reconhecedor vira uma lista de números na ordem falada
++       (extractSpokenNumbers); cada número novo responde a conta atual. Um número seguido de outro
++       é confirmado na hora; o último espera ~0,8 s parado (pode ser "vinte..." virando "vinte e
++       cinco") ou o fim da frase. Fala sem número ("hã", "é...") é ignorada — não conta como erro. */
++    function startCalcVoice(){
++      stopVoice();
++      voiceStatus = makeVoiceStatus();
++      voiceLogRef = null;
++      // seen[k] = valor do k-ésimo número desta sessão quando ele foi usado como resposta. Se o
++      // reconhecedor depois "gruda" a resposta seguinte nele (20 + "um" → 21; 10 + "zero" → 100;
++      // 1 + "dois" → 12), a diferença é a resposta nova (numberAddedTo).
++      var sessionId = null, seen = [], pendingTimer = null, pending = [];
++      function answer(val){
++        if(mode !== "voice" || idx >= TOTAL) return;
++        var q = questions[idx];
++        var ok = val === q.answer;
++        logAnswer(ok, "(falado)", Date.now()-questionStartTs);
++        log[log.length-1].heard = val;
++        renderLedger();
++        advance();
++      }
++      function newNumbers(list){
++        var out = [];
++        for(var k=0; k<Math.min(seen.length, list.length); k++){
++          if(list[k] !== seen[k]){
++            var d = numberAddedTo(seen[k], list[k]);
++            if(d !== null) out.push({k:k, v:d, full:list[k]});
+           }
+-        };
+-        recognizer.onend = function(){ voiceRunning = false; };
+-        recognizer.start();
+-      }catch(e){}
++        }
++        for(var k2=seen.length; k2<list.length; k2++) out.push({k:k2, v:list[k2], full:list[k2]});
++        return out;
++      }
++      function commit(items){
++        items.forEach(function(it){
++          if(!voiceRunning || mode !== "voice" || idx >= TOTAL) return;
++          seen[it.k] = it.full;
++          answer(it.v);
++        });
++      }
++      voiceRunning = true;
++      voiceCtl = startVoiceInput({
++        onText: function(text, isFinal, alts, session){
++          if(!voiceRunning) return;
++          if(session !== sessionId){
++            if(pendingTimer){ clearTimeout(pendingTimer); pendingTimer = null; commit(pending); }
++            sessionId = session; seen = []; pending = [];
++          }
++          if(pendingTimer){ clearTimeout(pendingTimer); pendingTimer = null; }
++          var list = extractSpokenNumbers(text);
++          var items = newNumbers(list);
++          if(isFinal && !items.length && alts){
++            for(var i=1;i<alts.length;i++){ var alt = newNumbers(extractSpokenNumbers(alts[i])); if(alt.length){ items = alt; break; } }
++          }
++          var tail = text.length > 40 ? "…" + text.slice(-40) : text;
++          voiceStatus.heard(tail, items.length ? "ok" : "");
++          if(isFinal){ pending = []; commit(items); return; }
++          // Um número seguido de outro já está completo; o último espera ~0,8 s parado.
++          commit(items.slice(0, -1));
++          pending = items.slice(-1);
++          if(pending.length){
++            pendingTimer = setTimeout(function(){ pendingTimer = null; if(voiceRunning){ var p2 = pending; pending = []; commit(p2); } }, 800);
++          }
++        },
++        onState: function(s){ voiceStatus.state(s); },
++        onLevel: function(r){ voiceStatus.level(r); },
++        onError: function(code, fatal){ voiceStatus.error(code, fatal); if(fatal) voiceRunning = false; }
++      });
++      voiceLogRef = voiceCtl;
++    }
++    // Pular a conta atual quando o microfone não pega (conta como não respondida certo).
++    function skipVoiceQuestion(){
++      if(mode !== "voice" || idx >= TOTAL) return;
++      logAnswer(false, "(pulada)", Date.now()-questionStartTs);
++      log[log.length-1].heard = null;
++      renderLedger();
++      advance();
+     }
+     function stopVoice(){
+       voiceRunning = false;
++      if(voiceCtl){ try{ voiceCtl.stop(); }catch(e){} voiceCtl = null; }
+       if(recognizer){ try{ recognizer.onresult=null; recognizer.onerror=null; recognizer.onend=null; recognizer.stop(); }catch(e){} recognizer=null; }
+     }
+ 
+     function finish(early){
+       clearInterval(timerHandle);
++      var vref = voiceLogRef;
+       stopVoice();
+       body.innerHTML = "";
+       controlsRow.style.display = "none";
+@@ -2064,6 +2632,11 @@
+           ["Tempo total", fmtTime(elapsedMs)],
+           ["Ritmo", attempted ? (elapsedMs/attempted/1000).toFixed(1) + "s / conta" : "—"]
+         ],
++        extra: (mode === "voice" && vref) ? voiceReportBlock(el("div",{class:"voice-breakdown"}), "Cálculo Mental",
++          correct + " certas, " + wrong + " erradas de " + attempted,
++          "Conta por conta:",
++          log.map(function(e){ return e.n + ". " + e.a + " " + e.op + " " + e.b + " → " + (e.heard === null || e.heard === undefined ? "pulada" : "ouviu " + e.heard + (e.ok ? " ✓" : " ✗")); }),
++          vref.log, vref) : null,
+         kind:"calc", ts:rec.ts, onRepeat:restart
+       });
+     }
+@@ -2187,68 +2760,126 @@
+ 
+     function tick(){ timerEl.textContent = fmtTime(Date.now()-startTime); }
+ 
++    /* Conferência ao vivo: o reconhecedor manda o texto enquanto a pessoa ainda fala. Cada cor
++       reconhecida é marcada na hora — menos a última da frase, que espera ~0,45 s sem mudar (o
++       reconhecedor às vezes corrige a última palavra, ex. "a sul" → "azul") ou o fim da frase.
++       "committed" = quantas cores desta sessão do reconhecedor já foram marcadas. */
++    /* Conferência por ALINHAMENTO (não mais "uma palavra ouvida = próxima palavra da grade"):
++       se o reconhecedor perde uma palavra, a conferência antiga deslocava todas as seguintes e
++       marcava quase tudo como erro. Agora, a cada texto recebido, as cores ouvidas NESTA sessão do
++       reconhecedor são alinhadas com a grade a partir de onde a sessão começou (alignColorTokens),
++       o que distingue "você disse a cor errada" (vermelho) de "o app não captou essa palavra"
++       (cinza, não conta como erro). Dentro da sessão as marcas podem ser corrigidas conforme chega
++       mais texto; quando a sessão fecha, ficam definitivas. A última cor ouvida espera ~0,45 s
++       parada antes de contar (o reconhecedor às vezes corrige a última palavra). */
++    var cellState = [], cellHeard = [], voiceCtlRef = null;
+     function startVoiceSequence(){
+-      var Ctor = getSpeechCtor();
+-      if(!Ctor) return;
+-      try{
+-        recognizer = new Ctor();
+-        recognizer.lang = "pt-BR";
+-        recognizer.continuous = true;
+-        recognizer.interimResults = false;
+-        voiceRunning = true;
+-        recognizer.onresult = function(ev){
+-          for(var i=ev.resultIndex; i<ev.results.length; i++){
+-            if(!ev.results[i].isFinal) continue;
+-            var ids = extractColorTokens(ev.results[i][0].transcript);
+-            ids.forEach(function(id){
+-              if(pointer >= cells.length) return;
+-              var ok = id === cells[pointer].displayColorId;
+-              cellEls[pointer].classList.remove("pointer");
+-              cellEls[pointer].classList.add(ok ? "voice-correct" : "voice-wrong");
+-              pointer++;
+-              if(pointer < cells.length) cellEls[pointer].classList.add("pointer");
+-              else finish();
+-            });
++      stopVoiceSeq();
++      cellState = cells.map(function(){ return null; });
++      cellHeard = cells.map(function(){ return null; });
++      var status = makeVoiceStatus();
++      var grid = body.querySelector(".stroop-grid");
++      if(grid && grid.parentNode) grid.parentNode.insertBefore(status.el, grid);
++      else body.appendChild(status.el);
++      var sessionId = null, base = 0, tokOffset = 0, tokens = [], pendingTimer = null, drawnUpTo = 0;
++
++      function render(){
++        for(var i=base; i<cells.length; i++){
++          var el2 = cellEls[i];
++          el2.classList.remove("pointer","voice-correct","voice-wrong","voice-miss");
++          var st = cellState[i];
++          if(st === "ok") el2.classList.add("voice-correct");
++          else if(st === "bad") el2.classList.add("voice-wrong");
++          else if(st === "miss") el2.classList.add("voice-miss");
++        }
++        if(pointer < cells.length){
++          cellEls[pointer].classList.add("pointer");
++          if(pointer >= drawnUpTo + 5 && cellEls[pointer].scrollIntoView){
++            drawnUpTo = pointer;
++            try{ cellEls[pointer].scrollIntoView({block:"nearest", behavior:"smooth"}); }catch(e){}
+           }
+-        };
+-        recognizer.onerror = function(ev){
+-          voiceRunning = false;
+-          if(ev.error === "not-allowed" || ev.error === "service-not-allowed"){
+-            body.insertBefore(el("div",{class:"calc-hint", style:"color:var(--danger);"},["Permissão de microfone negada. Reinicie e use só o cronômetro."]), body.firstChild);
+-          } else if(ev.error === "audio-capture"){
+-            body.insertBefore(el("div",{class:"calc-hint", style:"color:var(--danger);"},[NO_MIC_MSG]), body.firstChild);
++        }
++      }
++      // Recalcula as marcas da sessão atual a partir de "base" usando as cores ouvidas.
++      function apply(useTokens){
++        for(var i=base; i<cells.length; i++){ cellState[i] = null; cellHeard[i] = null; }
++        var expected = cells.slice(base).map(function(c){ return c.displayColorId; });
++        var res = alignColorTokens(useTokens, expected);
++        res.cells.forEach(function(c, k){ cellState[base+k] = c.state; cellHeard[base+k] = c.heard; });
++        pointer = base + res.consumed;
++        render();
++        if(pointer >= cells.length) finish();
++      }
++      function sessionTokens(){ return tokens.slice(tokOffset); }
++      function freeze(){
++        // Fecha a sessão: tudo o que foi ouvido conta, e a próxima parte começa depois disso.
++        if(pendingTimer){ clearTimeout(pendingTimer); pendingTimer = null; }
++        apply(sessionTokens());
++        base = pointer; tokOffset = tokens.length;
++      }
++      voiceRunning = true;
++      recognizer = voiceCtlRef = startVoiceInput({
++        onText: function(text, isFinal, alts, session){
++          if(!voiceRunning) return;
++          if(session !== sessionId){
++            if(sessionId !== null) freeze();
++            sessionId = session; tokens = []; tokOffset = 0;
++          }
++          if(pendingTimer){ clearTimeout(pendingTimer); pendingTimer = null; }
++          tokens = extractColorTokens(text);
++          if(isFinal && alts && tokens.length === 0){
++            // Frase principal sem nenhuma cor: tenta as outras versões que o reconhecedor mandou.
++            for(var ai=1; ai<alts.length; ai++){ var t2 = extractColorTokens(alts[ai]); if(t2.length){ tokens = t2; break; } }
+           }
+-        };
+-        recognizer.onend = function(){
+-          if(voiceRunning && mode === "voice" && pointer < cells.length){
+-            try{ recognizer.start(); }catch(e){}
++          if(tokens.length < tokOffset) tokOffset = tokens.length; // reconhecedor "encolheu" o texto
++          status.heard(text, tokens.length ? "ok" : "");
++          var st = sessionTokens();
++          if(isFinal){ freeze(); return; }
++          apply(st.slice(0, -1));
++          if(!voiceRunning) return;
++          if(st.length){
++            pendingTimer = setTimeout(function(){ pendingTimer = null; if(voiceRunning) apply(sessionTokens()); }, 450);
+           }
+-        };
+-        recognizer.start();
+-      }catch(e){}
++        },
++        onState: function(s){ status.state(s); },
++        onLevel: function(r){ status.level(r); },
++        onError: function(code, fatal){ status.error(code, fatal); if(fatal) voiceRunning = false; }
++      });
+     }
+     function stopVoiceSeq(){
+       voiceRunning = false;
+-      if(recognizer){ try{ recognizer.onend=null; recognizer.onresult=null; recognizer.onerror=null; recognizer.stop(); }catch(e){} recognizer=null; }
++      if(recognizer){ try{ recognizer.stop(); }catch(e){} recognizer=null; }
+     }
+ 
+     function finish(){
++      if(finish._done) return;
++      finish._done = true;
++      setTimeout(function(){ finish._done = false; }, 0);
+       clearInterval(timerHandle);
++      var voiceLog = voiceCtlRef ? voiceCtlRef.log : null;
+       stopVoiceSeq();
+       var elapsedMs = Date.now()-startTime;
+       var medal = medalFor(elapsedMs, {gold:30000, silver:45000, bronze:60000});
+-      var scoreInfo = null;
++      var scoreInfo = null, extra = null;
+       if(mode === "voice"){
+-        var okCount = cellEls.filter(function(d){ return d.classList.contains("voice-correct"); }).length;
+-        scoreInfo = {ok: okCount, total: cells.length};
++        var okN = 0, badN = 0, missN = 0;
++        cells.forEach(function(c, i){
++          var s = cellState[i];
++          if(s === "ok") okN++; else if(s === "bad") badN++; else missN++;
++        });
++        scoreInfo = {ok: okN, bad: badN, miss: missN, total: cells.length};
++        extra = stroopVoiceBreakdown(cells, cellState, cellHeard, voiceLog, voiceCtlRef);
+       }
+       var rec = {elapsedMs:elapsedMs, medal:medal, count:cells.length, mode:mode, voiceScore: scoreInfo};
+       addRecord("stroop", rec);
+       body.innerHTML = "";
+       var metrics = [["Tempo total", fmtTime(elapsedMs)], ["Palavras", String(cells.length)]];
+-      if(scoreInfo) metrics.unshift(["Acerto por voz", scoreInfo.ok+" / "+scoreInfo.total]);
++      if(scoreInfo){
++        metrics.unshift(["Não captadas pelo microfone", String(scoreInfo.miss)]);
++        metrics.unshift(["Cor certa / errada", scoreInfo.ok + " / " + scoreInfo.bad]);
++      }
+       metrics.push(["Conferência", mode === "voice" ? "🎙 Pelo microfone (verificado)" : "⏱ Só cronômetro (sem conferência)"]);
+-      showResult(panel, { big: fmtTime(elapsedMs), medal: medal, metrics: metrics, kind:"stroop", ts:rec.ts, onRepeat:restart });
++      showResult(panel, { big: fmtTime(elapsedMs), medal: medal, metrics: metrics, extra: extra, kind:"stroop", ts:rec.ts, onRepeat:restart });
+     }
+ 
+     return function cleanup(){ if(timerHandle) clearInterval(timerHandle); stopVoiceSeq(); };
